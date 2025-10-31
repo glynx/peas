@@ -51,7 +51,7 @@ class ASHTTPConnector(object):
         self.headers = {
                         "Content-Type": "application/vnd.ms-sync.wbxml",
                         "User-Agent" : ua,
-                        "MS-ASProtocolVersion" : "14.1",
+                        "MS-ASProtocolVersion" : "16.1",
                         "Accept-Language" : "en_us"
                         }
         return

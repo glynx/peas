@@ -35,6 +35,8 @@ def _normalize_headers(headers):
             items = headers
         except TypeError:
             return normal
+    if isinstance(items, dict):
+        items = items.items()
     for key, value in items:
         if value is None:
             continue

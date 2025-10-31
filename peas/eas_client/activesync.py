@@ -117,8 +117,6 @@ class ActiveSync(object):
         self.password = pw
         self.server = _idna_hostname(server)
         self.device_id = device_id
-        if not self.device_id:
-            self.device_id = str(uuid.uuid4()).replace("-","")[:32]
         self.server_version = server_version
         self.device_type = device_type
         self.policy_key = policy_key
