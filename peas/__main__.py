@@ -94,6 +94,22 @@ def create_arg_parser():
         metavar="UA",
     )
 
+    parser.add_option(
+        "--device-os",
+        None,
+        dest="device_os",
+        help="override ActiveSync device OS string (default: OutlookBasicAuth)",
+        metavar="OS",
+    )
+
+    parser.add_option(
+        "--device-imei",
+        None,
+        dest="device_imei",
+        help="override ActiveSync device IMEI value (default: 2095f3b9f442a32220d4d54e641bd4aa)",
+        metavar="IMEI",
+    )
+
     parser.add_option("-o", None, dest="file",
                       help="output to file", metavar="FILENAME")
 
@@ -183,6 +199,10 @@ def init_authed_client(options, verify=True):
         creds['device_type'] = options.device_type
     if options.user_agent is not None:
         creds['user_agent'] = options.user_agent
+    if options.device_os is not None:
+        creds['device_os'] = options.device_os
+    if options.device_imei is not None:
+        creds['device_imei'] = options.device_imei
 
     client.set_creds(creds)
 

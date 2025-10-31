@@ -38,6 +38,8 @@ class Peas:
             'device_id': None,  # This could be optional.
             'device_type': None,
             'user_agent': None,
+            'device_os': None,
+            'device_imei': None,
             'folder': None,
         }
 
@@ -63,6 +65,10 @@ class Peas:
             self._creds['device_type'] = 'iPhone'
         if self._creds.get('user_agent') is None:
             self._creds['user_agent'] = 'Outlook-iOS-Android/1.0'
+        if self._creds.get('device_os') is None:
+            self._creds['device_os'] = 'OutlookBasicAuth'
+        if self._creds.get('device_imei') is None:
+            self._creds['device_imei'] = '2095f3b9f442a32220d4d54e641bd4aa'
 
     def extract_emails_py_active_sync(self):
         emails = py_activesync_helper.extract_emails(self._creds)

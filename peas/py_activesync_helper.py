@@ -56,7 +56,17 @@ def _ensure_device_profile(creds):
         creds['device_type'] = ASHTTPConnector.DEFAULT_DEVICE_TYPE
     if not creds.get('user_agent'):
         creds['user_agent'] = ASHTTPConnector.USER_AGENT
-    return creds['device_id'], creds['device_type'], creds['user_agent']
+    if not creds.get('device_os'):
+        creds['device_os'] = 'OutlookBasicAuth'
+    if not creds.get('device_imei'):
+        creds['device_imei'] = ASHTTPConnector.DEFAULT_DEVICE_ID
+    return (
+        creds['device_id'],
+        creds['device_type'],
+        creds['user_agent'],
+        creds['device_os'],
+        creds['device_imei'],
+    )
 
 
 def _sanitize(value, default="default"):
@@ -248,12 +258,12 @@ def extract_emails(creds):
     storage.create_db_if_none(path=db_path)
 
     conn, curs = storage.get_conn_curs(path=db_path)
-    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    device_id, device_type, user_agent, device_os, device_imei = _ensure_device_profile(creds)
     device_info = {
         "Model": "Outlook for iOS and Android",
         "IMEI": "2095f3b9f442a32220d4d54e641bd4aa",
         "FriendlyName": "Outlook for iOS and Android",
-        "OS": "OutlookBasicAuth",
+        "OS": device_os,
         "OSLanguage": "en-us",
         "PhoneNumber": "NA",
         "MobileOperator": "NA",
@@ -414,12 +424,12 @@ def list_folders(creds):
     storage.create_db_if_none(path=db_path)
 
     conn, curs = storage.get_conn_curs(path=db_path)
-    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    device_id, device_type, user_agent, device_os, device_imei = _ensure_device_profile(creds)
     device_info = {
         "Model": "Outlook for iOS and Android",
-        "IMEI": "2095f3b9f442a32220d4d54e641bd4aa",
+        "IMEI": device_imei,
         "FriendlyName": "Outlook for iOS and Android",
-        "OS": "OutlookBasicAuth",
+        "OS": device_os,
         "OSLanguage": "en-us",
         "PhoneNumber": "NA",
         "MobileOperator": "NA",
@@ -474,7 +484,7 @@ def list_folders(creds):
 def get_unc_listing(creds, unc_path, username=None, password=None):
 
     # Create ActiveSync connector.
-    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    device_id, device_type, user_agent, _, _ = _ensure_device_profile(creds)
     as_conn = ASHTTPConnector(
         creds['server'],
         device_id=device_id,
@@ -495,7 +505,7 @@ def get_unc_listing(creds, unc_path, username=None, password=None):
 def get_unc_file(creds, unc_path, username=None, password=None):
 
     # Create ActiveSync connector.
-    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    device_id, device_type, user_agent, _, _ = _ensure_device_profile(creds)
     as_conn = ASHTTPConnector(
         creds['server'],
         device_id=device_id,
