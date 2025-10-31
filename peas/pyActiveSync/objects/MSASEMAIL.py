@@ -19,7 +19,15 @@
 
 """[MS-ASEMAIL] Email class namespace objects"""
 
-from MSASAIRS import airsyncbase_Type, airsyncbase_Body, airsyncbase_Attachment, airsyncbase_Attachments, airsyncbase_Method, airsyncbase_NativeBodyType, airsyncbase_BodyPart
+from .MSASAIRS import (
+    airsyncbase_Type,
+    airsyncbase_Body,
+    airsyncbase_Attachment,
+    airsyncbase_Attachments,
+    airsyncbase_Method,
+    airsyncbase_NativeBodyType,
+    airsyncbase_BodyPart,
+)
 
 class email_Importance:
     Low =    0
@@ -225,8 +233,12 @@ class email_Flag(object):                   #http://msdn.microsoft.com/en-us/lib
                 self.tasks_SubOrdinalDate = element.text
     def marshal(self):
         import base64
-        return base64.b64encode("%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s" % (self.tasks_Subject, str(self.email_flag_Status), self.email_FlagType, self.tasks_DateCompleted, self.email_CompleteTime, self.tasks_StartDate,
-                                                                                        self.tasks_DueDate, self.tasks_UtcStartDate, self.tasks_UtcDueDate, self.tasks_ReminderSet, self.tasks_ReminderTime, self.tasks_OrdinalDate, self.tasks_SubOrdinalDate))
+        payload = "%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s//%s" % (
+            self.tasks_Subject, str(self.email_flag_Status), self.email_FlagType, self.tasks_DateCompleted,
+            self.email_CompleteTime, self.tasks_StartDate, self.tasks_DueDate, self.tasks_UtcStartDate,
+            self.tasks_UtcDueDate, self.tasks_ReminderSet, self.tasks_ReminderTime, self.tasks_OrdinalDate,
+            self.tasks_SubOrdinalDate)
+        return base64.b64encode(payload.encode("utf-8")).decode("ascii")
     def __repr__(self):
         return self.marshal()
 

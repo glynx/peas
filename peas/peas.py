@@ -1,14 +1,28 @@
 __author__ = 'Adam Rutherford'
 
+import uuid
+
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
-import py_eas_helper
-import py_activesync_helper
+from . import py_eas_helper
+from . import py_activesync_helper
+from .http_logging import log_http_request, log_http_response
 
 
 PY_ACTIVE_SYNC = 1
 PY_EAS_CLIENT = 2
+
+
+def _idna_hostname(host):
+    if not host:
+        return host
+    if isinstance(host, bytes):
+        host = host.decode('utf-8')
+    try:
+        return host.encode('idna').decode('ascii')
+    except UnicodeError:
+        return host
 
 
 class Peas:
@@ -22,6 +36,9 @@ class Peas:
             'password': None,
             'domain': None,     # This could be optional.
             'device_id': None,  # This could be optional.
+            'device_type': None,
+            'user_agent': None,
+            'folder': None,
         }
 
         requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -35,7 +52,17 @@ class Peas:
 
     def set_creds(self, creds):
         """Configure which exchange server, credentials and other settings to use."""
-        self._creds.update(creds)
+        processed = dict(creds)
+        server = processed.get('server')
+        if isinstance(server, (str, bytes)):
+            processed['server'] = _idna_hostname(server)
+        self._creds.update(processed)
+        if self._creds.get('device_id') is None:
+            self._creds['device_id'] = uuid.uuid4().hex[:32]
+        if self._creds.get('device_type') is None:
+            self._creds['device_type'] = 'iPhone'
+        if self._creds.get('user_agent') is None:
+            self._creds['user_agent'] = 'Outlook-iOS-Android/1.0'
 
     def extract_emails_py_active_sync(self):
         emails = py_activesync_helper.extract_emails(self._creds)
@@ -80,15 +107,31 @@ class Peas:
 
         py_activesync_helper.disable_certificate_verification()
 
+    def list_folders(self):
+
+        assert self._backend == PY_ACTIVE_SYNC
+
+        return py_activesync_helper.list_folders(self._creds)
+
     def get_server_headers(self):
         """Get the ActiveSync web server headers."""
 
         sess = requests.Session()
 
         url = 'https://' + self._creds['server'] + '/Microsoft-Server-ActiveSync'
+        user_agent = self._creds.get('user_agent') or "Outlook-iOS-Android/1.0"
+        sess.headers.update({"User-Agent": user_agent})
+        log_http_request(
+            "GET",
+            url,
+            user=self._creds.get('user'),
+            device_id=self._creds.get('device_id'),
+            device_type=self._creds.get('device_type'),
+        )
 
         # TODO: Allow user to specify if SSL is verified.
         resp = sess.get(url, verify=False)
+        log_http_response("GET", url, resp.status_code, resp.headers)
 
         return resp.headers
 

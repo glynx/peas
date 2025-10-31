@@ -18,11 +18,13 @@
 ########################################################################
 
 import sqlite3
+from pathlib import Path
 
 class storage:
     @staticmethod
     def set_keyvalue(key, value, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        db_path = storage._resolve_db_path(path)
+        conn = sqlite3.connect(str(db_path))
         curs = conn.cursor()
         curs.execute("INSERT INTO KeyValue VALUES ('%s', '%s')" % (key, value))
         conn.commit()
@@ -30,7 +32,8 @@ class storage:
     
     @staticmethod
     def update_keyvalue(key, value, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        db_path = storage._resolve_db_path(path)
+        conn = sqlite3.connect(str(db_path))
         curs = conn.cursor()
         sql = "UPDATE KeyValue SET Value='%s' WHERE Key='%s'" % (value.replace("'","''"), key)
         curs.execute(sql)
@@ -39,7 +42,8 @@ class storage:
 
     @staticmethod
     def get_keyvalue(key, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        db_path = storage._resolve_db_path(path)
+        conn = sqlite3.connect(str(db_path))
         curs = conn.cursor()
         curs.execute("SELECT Value FROM KeyValue WHERE Key='%s'" % key)
         try:
@@ -51,14 +55,19 @@ class storage:
             return None
 
     @staticmethod
+    def _resolve_db_path(path):
+        if not path:
+            return Path("pyas.asdb")
+        candidate = Path(path)
+        if candidate.is_dir() or candidate.suffix == "":
+            candidate = candidate / "pyas.asdb"
+        return candidate
+
+    @staticmethod
     def create_db(path=None):
-        if path:
-            if path != "pyas.asdb":
-                if not path[-1] == "\\":
-                    path = path + "\\pyas.asdb"
-        else:
-            path="pyas.asdb"
-        conn = sqlite3.connect(path)
+        db_path = storage._resolve_db_path(path)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path))
         curs = conn.cursor()
         curs.execute("""CREATE TABLE FolderHierarchy (ServerId text, ParentId text, DisplayName text, Type text)""")
         curs.execute("""CREATE TABLE SyncKeys (SyncKey text, CollectionId text)""")
@@ -226,16 +235,16 @@ class storage:
                     ]
         for index in indicies:
             curs.execute(index)
-        storage.set_keyvalue("X-MS-PolicyKey", "0")
-        storage.set_keyvalue("EASPolicies", "")
-        storage.set_keyvalue("MID", "0")
+        storage.set_keyvalue("X-MS-PolicyKey", "0", path=str(db_path))
+        storage.set_keyvalue("EASPolicies", "", path=str(db_path))
+        storage.set_keyvalue("MID", "0", path=str(db_path))
         conn.commit()
 
         conn.close()
     
     @staticmethod
     def get_conn_curs(path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         return conn, curs
 
@@ -270,7 +279,7 @@ class storage:
 
     @staticmethod
     def update_folderhierarchy(changes, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         for change in changes:
             if change[0] == "Update":
@@ -359,20 +368,21 @@ class storage:
 
     @staticmethod
     def update_items(collections, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        db_path = storage._resolve_db_path(path)
+        conn = sqlite3.connect(str(db_path))
         curs = conn.cursor()
         for collection in collections:
             for command in collection.Commands:
                 if command[0] == "Add":
                     storage.item_operation(storage.ItemOps.Insert, command[1][1], command[1][0], curs)
-                if command[0] == "Delete":
+                elif command[0] == "Delete":
                     storage.item_operation(storage.ItemOps.Delete, command[1][1], command[1][0], curs)
                 elif command[0] == "Change":
                     storage.item_operation(storage.ItemOps.Update, command[1][1], command[1][0], curs)
                 elif command[0] == "SoftDelete":
                     storage.item_operation(storage.ItemOps.SoftDelete, command[1][1], command[1][0], curs)
-            if collection.SyncKey > 1:
-                storage.update_synckey(collection.SyncKey, collection.CollectionId, curs)
+            if int(collection.SyncKey) > 1:
+                storage.update_synckey(collection.SyncKey, collection.CollectionId, curs, path=str(db_path))
                 conn.commit()
             else:
                 conn.close()
@@ -388,11 +398,11 @@ class storage:
         return curs.fetchall()
 
     @staticmethod
-    def update_synckey(synckey, collectionid, curs=None):
+    def update_synckey(synckey, collectionid, curs=None, path="pyas.asdb"):
         cleanup = False
         if not curs:
             cleanup = True
-            conn = sqlite3.connect("pyas.asdb")
+            conn = sqlite3.connect(str(storage._resolve_db_path(path)))
             curs = conn.cursor()
         curs.execute("SELECT SyncKey FROM SyncKeys WHERE CollectionId = %s" % collectionid)
         prev_synckey = curs.fetchone()
@@ -406,7 +416,7 @@ class storage:
 
     @staticmethod
     def get_synckey(collectionid, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         curs.execute("SELECT SyncKey FROM SyncKeys WHERE CollectionId = %s" % collectionid)
         try:
@@ -418,21 +428,21 @@ class storage:
 
     @staticmethod
     def create_db_if_none(path="pyas.asdb"):
-        import os
-        if not os.path.isfile(path):
-            storage.create_db(path)
+        db_path = storage._resolve_db_path(path)
+        if not db_path.exists():
+            storage.create_db(db_path)
 
 
     @staticmethod
     def erase_db(path="pyas.asdb"):
-        import os
-        if os.path.isfile(path):
-            os.remove(path)
+        db_path = storage._resolve_db_path(path)
+        if db_path.exists():
+            db_path.unlink()
 
 
     @staticmethod
     def get_folder_name_to_id_dict(path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         curs.execute("SELECT DisplayName, ServerId FROM FolderHierarchy")
         id_name_list_of_tuples = curs.fetchall()
@@ -443,8 +453,28 @@ class storage:
         return name_id_dict
 
     @staticmethod
+    def get_all_folders(path="pyas.asdb"):
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
+        curs = conn.cursor()
+        curs.execute("SELECT ServerId, ParentId, DisplayName, Type FROM FolderHierarchy ORDER BY DisplayName COLLATE NOCASE")
+        rows = curs.fetchall()
+        conn.close()
+        return rows
+
+    @staticmethod
+    def get_folder_id_by_type(folder_type, path="pyas.asdb"):
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
+        curs = conn.cursor()
+        curs.execute(
+            "SELECT ServerId FROM FolderHierarchy WHERE Type = ?", (str(folder_type),)
+        )
+        row = curs.fetchone()
+        conn.close()
+        return row[0] if row else None
+
+    @staticmethod
     def get_synckeys_dict(curs, path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         curs.execute("SELECT * FROM SyncKeys")
         synckeys_rows = curs.fetchall()
@@ -457,14 +487,14 @@ class storage:
 
     @staticmethod
     def get_new_mid(path="pyas.asdb"):
-        pmid = int(storage.get_keyvalue("MID"))
+        pmid = int(storage.get_keyvalue("MID", path=path))
         mid = str(pmid+1)
-        storage.update_keyvalue("MID", mid)
+        storage.update_keyvalue("MID", mid, path=path)
         return mid
 
     @staticmethod
     def get_serverid_to_type_dict(path="pyas.asdb"):
-        conn = sqlite3.connect(path)
+        conn = sqlite3.connect(str(storage._resolve_db_path(path)))
         curs = conn.cursor()
         curs.execute("SELECT * FROM FolderHierarchy")
         folders_rows = curs.fetchall()

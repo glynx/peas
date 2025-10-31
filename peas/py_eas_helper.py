@@ -2,7 +2,8 @@ __author__ = 'Adam Rutherford'
 
 from twisted.internet import reactor
 
-import eas_client.activesync
+from .eas_client import activesync
+import uuid
 
 
 def body_result(result, emails, num_emails):
@@ -14,30 +15,30 @@ def body_result(result, emails, num_emails):
         reactor.stop()
 
 
-def sync_result(result, fid, async, emails):
+def sync_result(result, fid, as_client, emails):
 
     assert hasattr(result, 'keys')
 
-    num_emails = len(result.keys())
+    num_emails = len(result)
 
-    for fetch_id in result.keys():
+    for fetch_id in result:
 
-        async.add_operation(async.fetch, collectionId=fid, serverId=fetch_id,
+        as_client.add_operation(as_client.fetch, collectionId=fid, serverId=fetch_id,
             fetchType=4, mimeSupport=2).addBoth(body_result, emails, num_emails)
 
 
-def fsync_result(result, async, emails):
+def fsync_result(result, as_client, emails):
 
-    for (fid, finfo) in result.iteritems():
+    for (fid, finfo) in result.items():
         if finfo['DisplayName'] == 'Inbox':
-            async.add_operation(async.sync, fid).addBoth(sync_result, fid, async, emails)
+            as_client.add_operation(as_client.sync, fid).addBoth(sync_result, fid, as_client, emails)
             break
 
 
-def prov_result(success, async, emails):
+def prov_result(success, as_client, emails):
 
     if success:
-        async.add_operation(async.folder_sync).addBoth(fsync_result, async, emails)
+        as_client.add_operation(as_client.folder_sync).addBoth(fsync_result, as_client, emails)
     else:
         reactor.stop()
 
@@ -46,10 +47,27 @@ def extract_emails(creds):
 
     emails = []
 
-    async = eas_client.activesync.ActiveSync(creds['domain'], creds['user'], creds['password'],
-            creds['server'], True, device_id=creds['device_id'], verbose=False)
+    device_id = creds.get('device_id') or uuid.uuid4().hex[:32]
+    device_type = creds.get('device_type') or 'iPhone'
+    user_agent = creds.get('user_agent') or 'Outlook-iOS-Android/1.0'
 
-    async.add_operation(async.provision).addBoth(prov_result, async, emails)
+    creds.setdefault('device_id', device_id)
+    creds.setdefault('device_type', device_type)
+    creds.setdefault('user_agent', user_agent)
+
+    as_client = activesync.ActiveSync(
+        creds.get('domain'),
+        creds['user'],
+        creds['password'],
+        creds['server'],
+        True,
+        device_id=device_id,
+        device_type=device_type,
+        user_agent=user_agent,
+        verbose=False
+    )
+
+    as_client.add_operation(as_client.provision).addBoth(prov_result, as_client, emails)
 
     reactor.run()
 

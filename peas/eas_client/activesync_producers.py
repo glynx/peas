@@ -1,18 +1,18 @@
 from twisted.internet.defer import succeed
 from twisted.web.iweb import IBodyProducer
-from zope.interface import implements
-from dewbxml import wbxmlparser, wbxmlreader, wbxmldocument, wbxmlelement, wbxmlstring
+from zope.interface import implementer
+from .dewbxml import wbxmlparser, wbxmlreader, wbxmldocument, wbxmlelement, wbxmlstring
 import struct
 
+@implementer(IBodyProducer)
 class WBXMLProducer(object):
-	implements(IBodyProducer)
 	def __init__(self, wbdoc, verbose=False):
 		self.verbose=verbose
 		self.wb = wbdoc
-		self.body = str(self.wb.tobytes())
+		self.body = self.wb.tobytes()
 		self.length = len(self.body)
 	def startProducing(self, consumer):
-		#if self.verbose: print "Producing",self.body.encode("hex"), self.wb
+		#if self.verbose: print("Producing", self.body.encode("hex"), self.wb)
 		consumer.write(self.body)
 		return succeed(None)
 	def pauseProducing(self): pass
@@ -28,9 +28,9 @@ def convert_array_to_children(in_elem, in_val):
 			in_elem.addchild(add_elem)
 			convert_array_to_children(add_elem, v[1])
 	elif isinstance(in_val, dict):
-		print "FOUND OPAQUE THING",in_val
+		print("FOUND OPAQUE THING", in_val)
 		in_elem.addchild(wbxmlstring(struct.pack(in_val["fmt"],in_val["val"]), opaque=True))
-		print "OPAQUE PRODUCED",in_elem
+		print("OPAQUE PRODUCED", in_elem)
 	elif in_val != None:
 		in_elem.addchild(wbxmlstring(in_val))
 
@@ -40,13 +40,15 @@ def convert_dict_to_wbxml(indict, default_page_num=None):
 	wb.version = "1.3"
 	wb.schema = "activesync"
 	assert len(indict) == 1 # must be only one root element
-	#print "Root",indict.keys()[0]
+	#print "Root", next(iter(indict.keys()))
+	root_name = next(iter(indict.keys()))
+	root_children = next(iter(indict.values()))
 	if default_page_num != None:
-		root = wbxmlelement(indict.keys()[0], page_num=default_page_num)
+		root = wbxmlelement(root_name, page_num=default_page_num)
 	else:
-		root = wbxmlelement(indict.keys()[0])
+		root = wbxmlelement(root_name)
 	wb.addchild(root)
-	convert_array_to_children(root, indict.values()[0])
+	convert_array_to_children(root, root_children)
 	return wb
 		
 class FolderSyncProducer(WBXMLProducer):

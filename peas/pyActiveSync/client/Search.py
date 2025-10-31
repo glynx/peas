@@ -73,10 +73,10 @@ class Search:
         results = []
 
         for element in children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 status = element.text
                 if status != "1":
-                    print "%s Exception: %s" % (root_tag, status)
+                    print("%s Exception: %s" % (root_tag, status))
             elif element.tag == "Response":
 
                 properties = element.basic_xpath('Store/Result/Properties')
@@ -89,4 +89,3 @@ class Search:
                     results.append(result)
 
         return status, results
-

@@ -19,7 +19,7 @@
 
 """[MS-ASNOTE] Note objects"""
 
-from MSASEMAIL import airsyncbase_Body
+from .MSASEMAIL import airsyncbase_Body
 
 def parse_note(data):
     note_dict = {}

@@ -79,18 +79,18 @@ if policykey:
     as_conn.set_policykey(policykey)
 
 def as_request(cmd, wapxml_req):
-    print "\r\n%s Request:" % cmd
-    print wapxml_req
+    print("\r\n%s Request:" % cmd)
+    print(wapxml_req)
     res = as_conn.post(cmd, parser.encode(wapxml_req))
     wapxml_res = parser.decode(res)
-    print "\r\n%s Response:" % cmd
-    print wapxml_res
+    print("\r\n%s Response:" % cmd)
+    print(wapxml_res)
     return wapxml_res
 
 #Provision functions
 def do_apply_eas_policies(policies):
     for policy in policies.keys():
-        print "Virtually applying %s = %s" % (policy, policies[policy])
+        print("Virtually applying %s = %s" % (policy, policies[policy]))
     return True
 
 def do_provision():
@@ -114,12 +114,12 @@ foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0"))
 foldersync_xmldoc_res = as_request("FolderSync", foldersync_xmldoc_req)
 changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
 if int(status) > 138 and int(status) < 145:
-    print as_status("FolderSync", status)
+    print(as_status("FolderSync", status))
     do_provision()
     foldersync_xmldoc_res = as_request("FolderSync", foldersync_xmldoc_req)
     changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
     if int(status) > 138 and int(status) < 145:
-        print as_status("FolderSync", status)
+        print(as_status("FolderSync", status))
         raise Exception("Unresolvable provisoning error: %s. Cannot continue..." % status)
 if len(changes) > 0:
     storage.update_folderhierarchy(changes)
@@ -129,7 +129,7 @@ if len(changes) > 0:
 #ItemOperations
 itemoperations_params = [{"Name":"Fetch","Store":"Mailbox", "FileReference":"%34%67%32"}]
 itemoperations_xmldoc_req = ItemOperations.build(itemoperations_params)
-print "\r\nItemOperations Request:\r\n", itemoperations_xmldoc_req
+print("\r\nItemOperations Request:\r\n", itemoperations_xmldoc_req)
 #itemoperations_xmldoc_res, attachment_file = as_conn.fetch_multipart(itemoperations_xmldoc_req, "myattachment1.txt")
 #itemoperations_xmldoc_res_parsed = ItemOperations.parse(itemoperations_xmldoc_res)
 #print itemoperations_xmldoc_res
@@ -146,7 +146,7 @@ if foldercreate_res_parsed[0] == "1":
     storage.update_synckey(foldercreate_res_parsed[1], "0", curs)
     conn.commit()
 else:
-    print as_status("FolderCreate", foldercreate_res_parsed[0])
+    print(as_status("FolderCreate", foldercreate_res_parsed[0]))
 
 time.sleep(5)
 
@@ -180,8 +180,8 @@ try:
         storage.delete_folderhierarchy_change(delete_folder, curs)
         storage.update_synckey(folderdelete_res_parsed[1], "0", curs)
         conn.commit()
-except TypeError, e:
-    print "\r\n%s\r\n" % e
+except TypeError as e:
+    print("\r\n%s\r\n" % e)
     pass
 
 #ResolveRecipients
@@ -199,15 +199,15 @@ my_email["From"] = as_user
 my_email["To"] = as_user
 
 sendmail_xmldoc_req = SendMail.build(email_mid, my_email)
-print "\r\nRequest:"
-print sendmail_xmldoc_req
+print("\r\nRequest:")
+print(sendmail_xmldoc_req)
 res = as_conn.post("SendMail", parser.encode(sendmail_xmldoc_req))
-print "\r\nResponse:"
+print("\r\nResponse:")
 if res == '':
-    print "\r\nTest message sent successfully!"
+    print("\r\nTest message sent successfully!")
 else:
     sendmail_xmldoc_res = parser.decode(res)
-    print sendmail_xmldoc_res
+    print(sendmail_xmldoc_res)
     sendmail_res = SendMail.parse(sendmail_xmldoc_res)
 
 ##MoveItems

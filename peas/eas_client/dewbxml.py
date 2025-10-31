@@ -472,13 +472,13 @@ class wbxmldocument(object):
         version_minor = int(self.version.split(".")[1])
 
         enc_token = 1
-        for (token,enc) in _applications.iteritems():
+        for (token,enc) in _applications.items():
             if enc == self.schema:
                 enc_token = token
                 break
         
         chars_token = 0
-        for (token,enc) in _charsets.iteritems():
+        for (token,enc) in _charsets.items():
             if enc == self.encoding:
                 chars_token = token
                 break
@@ -555,7 +555,7 @@ class wbxmlelement(object):
         for page_num in range(len(_applications[enc_token]["elements"])):
             if self.page_num != None and page_num != self.page_num:
                 continue
-            for token,tokeninfo in _applications[enc_token]["elements"][page_num].iteritems():
+            for token,tokeninfo in _applications[enc_token]["elements"][page_num].items():
                 if tokeninfo[0] == self.name:
                     tag_val = token
                     tag_pagenum = page_num
@@ -690,7 +690,7 @@ class wbxmlparser(object):
             If data is a string, it is interpreted as a path to a WBXML file;
             otherwise, it's expected to be a wbxmlreader object.
         '''
-        if isinstance(data, basestring):
+        if isinstance(data, (bytes, str)):
             data = wbxmlreader(data)
 
         doc = wbxmldocument()
@@ -725,7 +725,7 @@ class wbxmlparser(object):
         token = data.read()
         minor = 0b1111 & token
         major = (token >> 4) + 1
-        doc.version = `major` + '.' + `minor`
+        doc.version = f"{major}.{minor}"
 
     def __publicid(self, data, doc):
         r'''Sets the schema attribute of a WBXML DOM document object. Also sets

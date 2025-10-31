@@ -29,13 +29,13 @@ class SmartReply:
         smartreply_xmldoc_req.set_root(xmlrootnode, "composemail")
         xml_clientid_node = wapxmlnode("ClientId", xmlrootnode, client_id)
         xml_source_node = wapxmlnode("Source", xmlrootnode)
-        if source.has_key("FolderId"):
+        if "FolderId" in source:
             wapxmlnode("FolderId", xml_source_node, source["FolderId"])
-        if source.has_key("ItemId"):
+        if "ItemId" in source:
             wapxmlnode("ItemId", xml_source_node, source["ItemId"])
-        if source.has_key("LongId"):
+        if "LongId" in source:
             wapxmlnode("LongId", xml_source_node, source["LongId"]) 
-        if source.has_key("InstanceId"):
+        if "InstanceId" in source:
             wapxmlnode("InstanceId", xml_source_node, source["InstanceId"])        
         xml_accountid_node = wapxmlnode("AccountId", xmlrootnode, display_name)
         xml_saveinsentiems_node = wapxmlnode("SaveInSentItems", xmlrootnode, str(int(save_in_sent_items)))
@@ -62,7 +62,7 @@ class SmartReply:
         status = None
 
         for element in smartreply_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 status = element.text
         return status
 

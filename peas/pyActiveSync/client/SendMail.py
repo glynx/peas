@@ -52,7 +52,7 @@ class SendMail:
         status = None
 
         for element in sendmail_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 status = element.text
         return status
 

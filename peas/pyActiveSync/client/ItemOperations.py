@@ -34,46 +34,46 @@ class ItemOperations:
             if operations[operation]["Name"] == "EmptyFolderContents":
                 xmlemptyfoldercontentsnode = wapxmlnode("EmptyFolderContents", xmlrootnode)
                 xmlcollectionidnode = wapxmlnode("airsync:CollectionId", xmlemptyfoldercontentsnode, operations[operation]["CollectionId"])
-                if operations[operation].has_key("DeleteSubFolders"):
+                if "DeleteSubFolders" in operations[operation]:
                     xmloptionsnode = wapxmlnode("Options", xmlemptyfoldercontentsnode)
                     xmldeletesubfoldersnode = wapxmlnode("DeleteSubFolders", xmloptionsnode, operations[operation]["DeleteSubFolders"])
 
             elif operations[operation]["Name"] == "Fetch":
                 xmlfetchnode = wapxmlnode("Fetch", xmlrootnode)
                 xmloptionsnode = wapxmlnode("Store", xmlfetchnode, operations[operation]["Store"])
-                if operations[operation].has_key("LinkId"):
+                if "LinkId" in operations[operation]:
                     xmllinkidnode = wapxmlnode("documentlibrary:LinkId", xmlfetchnode, operations[operation]["LinkId"]) #URI of document
-                if operations[operation].has_key("LongId"):
+                if "LongId" in operations[operation]:
                     xmllongidnode = wapxmlnode("search:LongId", xmlfetchnode, operations[operation]["LongId"])
-                if operations[operation].has_key("CollectionId"):
+                if "CollectionId" in operations[operation]:
                     xmlcollectionidnode = wapxmlnode("airsync:CollectionId", xmlfetchnode, operations[operation]["CollectionId"])
-                if operations[operation].has_key("ServerId"):
+                if "ServerId" in operations[operation]:
                     xmlserveridnode = wapxmlnode("airsync:ServerId", xmlfetchnode, operations[operation]["ServerId"])
-                if operations[operation].has_key("FileReference"):
+                if "FileReference" in operations[operation]:
                     xmlfilereferencenode = wapxmlnode("airsyncbase:FileReference", xmlfetchnode, operations[operation]["FileReference"]) #only range option can be specified
-                if operations[operation].has_key("RemoveRightsManagementProtection"):
+                if "RemoveRightsManagementProtection" in operations[operation]:
                     xmlremovermnode = wapxmlnode("rm:RemoveRightsManagementProtection", xmlfetchnode) #Empty element
                 if len(xmlfetchnode.get_children()) < 2: #let's make sure one of the above item locations was supplied
                     raise AttributeError("ItemOperations Fetch: No item to be fetched supplied.")
 
                 xmloptionsnode = wapxmlnode("Options")
-                if operations[operation].has_key("Schema"):
+                if "Schema" in operations[operation]:
                     xmlschemanode = wapxmlnode("Schema", xmloptionsnode, operations[operation]["Schema"]) #fetch only specific properties of an item. mailbox store only. cannot use for attachments.
-                if operations[operation].has_key("Range"):
+                if "Range" in operations[operation]:
                     xmlrangenode = wapxmlnode("Range", xmloptionsnode, operations[operation]["Range"]) #select bytes is only for documents and attachments
-                if operations[operation].has_key("UserName"): #select username and password to use for fetch. i imagine this is  only for documents.
-                    if not operations[operation].has_key("Password"):
+                if "UserName" in operations[operation]: #select username and password to use for fetch. i imagine this is  only for documents.
+                    if not "Password" in operations[operation]:
                         raise AttributeError("ItemOperations Fetch: Username supplied for fetch operation, but no password supplied. Aborting.")
                         return
                     xmlusernamenode = wapxmlnode("UserName", xmloptionsnode, operations[operation]["UserName"]) #username to use for fetch
                     xmlpasswordnode = wapxmlnode("Password", xmloptionsnode, operations[operation]["Password"]) #password to use for fetch
-                if operations[operation].has_key("MIMESupport"):
+                if "MIMESupport" in operations[operation]:
                     xmlmimesupportnode = wapxmlnode("airsync:MIMESupport", xmloptionsnode, operations[operation]["MIMESupport"]) #objects.MSASAIRS.airsync_MIMESupport
-                if operations[operation].has_key("BodyPreference"):
+                if "BodyPreference" in operations[operation]:
                     xmlbodypreferencenode = wapxmlnode("airsyncbase:BodyPreference", xmloptionsnode, operations[operation]["BodyPreference"])
-                if operations[operation].has_key("BodyPartPreference"):
+                if "BodyPartPreference" in operations[operation]:
                     xmlbodypartpreferencenode = wapxmlnode("airsyncbase:BodyPartPreference", xmloptionsnode, operations[operation]["BodyPartPreference"])
-                if operations[operation].has_key("RightsManagementSupport"):
+                if "RightsManagementSupport" in operations[operation]:
                     xmlrmsupportnode = wapxmlnode("rm:RightsManagementSupport", xmloptionsnode, operations[operation]["RightsManagementSupport"])#1=Supports RM. Decrypt message before send. 2=Do not decrypt message before send 
                 if len(xmloptionsnode.get_children()) > 0:
                     xmloptionsnode.set_parent(xmlfetchnode)
@@ -82,7 +82,7 @@ class ItemOperations:
                 xmlmovenode = wapxmlnode("Move", xmlrootnode)
                 xmlconversationidnode = wapxmlnode("ConversationId", xmlmovenode, operations[operation]["ConversationId"])
                 xmldstfldidnode = wapxmlnode("DstFldId", xmlmovenode, operations[operation]["DstFldId"])
-                if operations[operation].has_key("MoveAlways"):
+                if "MoveAlways" in operations[operation]:
                     xmloptionsnode = wapxmlnode("Options", xmlmovenode)
                     xmlmovealwaysnode = wapxmlnode("MoveAlways", xmloptionsnode, operations[operation]["MoveAlways"]) #also move future emails in this conversation to selected folder.
             else:
@@ -109,10 +109,10 @@ class ItemOperations:
         responses = []
 
         for element in itemoperations_itemoperations_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 itemoperations_itemoperations_status = element.text
                 if itemoperations_itemoperations_status != "1":
-                    print "FolderSync Exception: %s" % itemoperations_itemoperations_status
+                    print("FolderSync Exception: %s" % itemoperations_itemoperations_status)
             elif element.tag == "Response":
                 response_elements = element.get_children()
                 for response_element in response_elements:

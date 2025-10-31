@@ -4,6 +4,8 @@ import sys
 import os
 import hashlib
 import errno
+import base64
+import binascii
 from random import choice
 from string import ascii_uppercase, digits
 from optparse import OptionParser
@@ -68,6 +70,30 @@ def create_arg_parser():
                       action="store_true", default=False,
                       help="verify SSL certificates (important)")
 
+    parser.add_option(
+        "--device-id",
+        None,
+        dest="device_id",
+        help="override ActiveSync DeviceId (default: random 32 hex chars)",
+        metavar="DEVICEID",
+    )
+
+    parser.add_option(
+        "--device-type",
+        None,
+        dest="device_type",
+        help="override ActiveSync DeviceType (default: iPhone)",
+        metavar="DEVICETYPE",
+    )
+
+    parser.add_option(
+        "--user-agent",
+        None,
+        dest="user_agent",
+        help="override ActiveSync User-Agent header (default: Outlook-iOS-Android/1.0)",
+        metavar="UA",
+    )
+
     parser.add_option("-o", None, dest="file",
                       help="output to file", metavar="FILENAME")
 
@@ -117,6 +143,15 @@ def create_arg_parser():
                       action="store_true", dest="brute_unc",
                       help="recursively list all files at a given UNC path")
 
+    parser.add_option("--folder", None,
+                      dest="folder",
+                      help="folder name or ID to target when retrieving emails",
+                      metavar="FOLDER")
+
+    parser.add_option("--list-folders", None,
+                      action="store_true", dest="list_folders",
+                      help="list folders available via ActiveSync")
+
     return parser
 
 
@@ -140,6 +175,14 @@ def init_authed_client(options, verify=True):
         creds['smb_user'] = options.smb_user
     if options.smb_password is not None:
         creds['smb_password'] = options.smb_password
+    if options.folder is not None:
+        creds['folder'] = options.folder
+    if options.device_id is not None:
+        creds['device_id'] = options.device_id
+    if options.device_type is not None:
+        creds['device_type'] = options.device_type
+    if options.user_agent is not None:
+        creds['user_agent'] = options.user_agent
 
     client.set_creds(creds)
 
@@ -183,17 +226,53 @@ def extract_emails(options):
 
     emails = client.extract_emails()
     # TODO: Output the emails in a more useful format.
+    if options.output_dir:
+        Path(options.output_dir).mkdir(parents=True, exist_ok=True)
+
     for i, email in enumerate(emails):
 
+        payload = email.strip() if hasattr(email, 'strip') else email
+
         if options.output_dir:
-            fname = 'email_%d_%s.xml' % (i, hashlib.md5(email).hexdigest())
+            digest_input = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode('utf-8')
+            fname = 'email_%d_%s.xml' % (i, hashlib.md5(digest_input).hexdigest())
             path = os.path.join(options.output_dir, fname)
-            open(path, 'wb').write(email.strip() + '\n')
+            if isinstance(payload, (bytes, bytearray)):
+                to_write = payload + b'\n'
+            else:
+                to_write = (payload + '\n').encode('utf-8')
+            with open(path, 'wb') as fh:
+                fh.write(to_write)
         else:
-            output_result(email + '\n', options, default='repr')
+            if isinstance(payload, (bytes, bytearray)):
+                output_result(payload + b'\n', options, default='stdout')
+            else:
+                output_result(payload + '\n', options, default='stdout')
 
     if options.output_dir:
         info("Wrote %d emails to %r" % (len(emails), options.output_dir))
+
+
+def list_folders(options):
+
+    client = init_authed_client(options, verify=options.verify_ssl)
+    if not client:
+        return
+
+    folders = client.list_folders()
+    if not folders:
+        info("No folders returned by server.")
+        return
+
+    lines = []
+    for folder in folders:
+        name = folder.get("DisplayName", "-")
+        server_id = folder.get("ServerId", "-")
+        parent_id = folder.get("ParentId", "-")
+        ftype = folder.get("Type", "-")
+        lines.append(f"{name} (ID: {server_id}, Type: {ftype}, Parent: {parent_id})")
+
+    output_result('\n'.join(lines), options, default='stdout')
 
 
 def list_unc_helper(client, uncpath, options, show_parent=True):
@@ -376,35 +455,51 @@ def output_result(data, options, default='repr'):
 
     # Process the output based on the format/encoding options chosen.
     encoding_used = True
+    payload = data
     for action in actions:
         if action == 'repr':
-            data = repr(data)
+            payload = repr(payload)
             encoding_used = False
         elif action == 'hex':
-            data = data.encode('hex')
+            raw = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode('utf-8')
+            payload = binascii.hexlify(raw).decode('ascii')
             encoding_used = False
         elif action in ['base64', 'b64']:
-            data = data.encode('base64')
+            raw = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode('utf-8')
+            payload = base64.b64encode(raw).decode('ascii')
             encoding_used = False
         elif action == 'stdout':
-            print(data)
+            if isinstance(payload, (bytes, bytearray)):
+                sys.stdout.buffer.write(payload)
+                sys.stdout.buffer.write(b'\n')
+            else:
+                print(payload)
             encoding_used = True
         elif action == 'stderr':
-            sys.stderr.write(data)
+            if isinstance(payload, (bytes, bytearray)):
+                sys.stderr.buffer.write(payload)
+            else:
+                sys.stderr.write(payload)
             encoding_used = True
         # Allow the user to write the file after other encodings have been applied.
         elif action == 'file':
             if options.file:
-                open(options.file, 'wb').write(data)
+                to_write = payload if isinstance(payload, (bytes, bytearray)) else str(payload).encode('utf-8')
+                with open(options.file, 'wb') as fh:
+                    fh.write(to_write)
                 if not options.quiet:
-                    info("Wrote %d bytes to %r." % (len(data), options.file))
+                    info("Wrote %d bytes to %r." % (len(to_write), options.file))
             else:
                 error("No filename specified.")
             encoding_used = True
 
     # Print now if an encoding has been used but never output.
     if not encoding_used:
-        print(data)
+        if isinstance(payload, (bytes, bytearray)):
+            sys.stdout.buffer.write(payload)
+            sys.stdout.buffer.write(b'\n')
+        else:
+            print(payload)
 
 
 def process_options(options):
@@ -457,6 +552,9 @@ def main():
     ran = False
     if options.check:
         check(options)
+        ran = True
+    if options.list_folders:
+        list_folders(options)
         ran = True
     if options.extract_emails:
         extract_emails(options)

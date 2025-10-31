@@ -57,10 +57,10 @@ class ResolveRecipients:
         recipients = []
 
         for element in folderhierarchy_resolverecipients_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 folderhierarchy_resolverecipients_status = element.text
                 if folderhierarchy_resolverecipients_status != "1":
-                     print "ResolveRecipients Status: %s" % folderhierarchy_resolverecipients_status
+                     print("ResolveRecipients Status: %s" % folderhierarchy_resolverecipients_status)
             elif element.tag == "Response":
                 for response_element in element.get_children():
                     if response_element.tag == "To":

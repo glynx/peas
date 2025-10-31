@@ -57,10 +57,10 @@ class FolderSync:
         changes = []
 
         for element in folderhierarchy_foldersync_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 folderhierarchy_foldersync_status = element.text
                 if folderhierarchy_foldersync_status != "1":
-                    print "FolderSync Exception: %s" % folderhierarchy_foldersync_status
+                    print("FolderSync Exception: %s" % folderhierarchy_foldersync_status)
             elif element.tag == "SyncKey":
                 folderhierarchy_foldersync_synckey = element.text
             elif element.tag == "Changes":

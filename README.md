@@ -1,11 +1,11 @@
 # PEAS
 
-PEAS is a Python 2 library and command line application for running commands on an ActiveSync server e.g. Microsoft Exchange. It is based on [research](https://labs.mwrinfosecurity.com/blog/accessing-internal-fileshares-through-exchange-activesync) into Exchange ActiveSync protocol by Adam Rutherford and David Chismon of MWR.
+PEAS is a Python 3 library and command line application for running commands on an ActiveSync server e.g. Microsoft Exchange. It is based on [research](https://labs.mwrinfosecurity.com/blog/accessing-internal-fileshares-through-exchange-activesync) into Exchange ActiveSync protocol by Adam Rutherford and David Chismon of MWR. The original project targeted Python 2; this fork is fully ported to Python 3. 
 
 ## Prerequisites
 
-* `python` is Python 2, otherwise use `python2`
-* Python [Requests](http://docs.python-requests.org/) library
+* Python 3.8 or later
+* Python [Requests](https://docs.python-requests.org/) library (installed automatically via `requirements.txt`)
 
 ## Significant source files
 
@@ -20,8 +20,7 @@ Path | Functionality
 
 ```
 $ git clone https://github.com/snovvcrash/peas ~/tools/peas-m && cd ~/tools/peas-m
-$ python3 -m virtualenv --python=/usr/bin/python venv && source ./venv/bin/activate
-(venv) $ pip install --upgrade 'setuptools<45.0.0'
+$ python3 -m venv venv && source ./venv/bin/activate
 (venv) $ pip install -r requirements.txt
 ```
 
@@ -113,6 +112,10 @@ Options:
   --smb-user=USER       username to use for SMB operations
   --smb-pass=PASSWORD   password to use for SMB operations
   --verify-ssl          verify SSL certificates (important)
+  --device-id=DEVICEID  override the DeviceId sent to ActiveSync (default: random 32 hex chars)
+  --device-type=DEVICETYPE
+                        override the DeviceType sent to ActiveSync (default: iPhone)
+  --user-agent=UA       override the User-Agent header (default: Outlook-iOS-Android/1.0)
   -o FILENAME           output to file
   -O PATH               output directory (for specific commands only, not
                         combined with -o)
@@ -121,12 +124,22 @@ Options:
   --pattern=PATTERN     filter files by comma-separated patterns (--crawl-unc)
   --download            download files at a given UNC path while crawling
                         (--crawl-unc)
+  --prefix=PREFIX       NetBIOS hostname prefix (--brute-unc)
   --check               check if account can be accessed with given password
   --emails              retrieve emails
+  --folder=FOLDER       folder name or ID to target when retrieving emails
+  --list-folders        list folders available via ActiveSync
   --list-unc=UNC_PATH   list the files at a given UNC path
   --dl-unc=UNC_PATH     download the file at a given UNC path
   --crawl-unc=UNC_PATH  recursively list all files at a given UNC path
+  --brute-unc           recursively list all files at a given UNC path
 ```
+
+## ActiveSync cache
+
+When PEAS connects to Exchange, it caches FolderSync results, SyncKeys and policy data in `./pyas_cache/<server>/<user>.asdb`. The chosen cache file is printed whenever `--emails` or `--list-folders` is executed. Delete the subdirectory to reset the cache for a specific account.
+
+All HTTP requests are logged to stdout (method, URL, user, device id/type), so you can audit what the client sends without extra tooling. If Exchange responds with a device access state such as *Quarantined* or *Blocked*, PEAS will emit a warning.
 
 ## PEAS library
 
@@ -187,3 +200,10 @@ py-eas-client support is limited to retrieving emails and causes a dependency on
 The licence may be restrictive due to the inclusion of pyActiveSync, which uses the GPLv2.
 
 The requirement to know the hostname of the target machine for file share access may impede enumeration.
+### List folders and fetch a specific folder
+
+```
+$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --list-folders
+$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails --folder "Posteingang"
+$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails --device-id 1234567890ABCDEF1234567890ABCDEF --device-type Outlook --user-agent Outlook-iOS-Android/1.0
+```

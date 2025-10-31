@@ -34,12 +34,12 @@ class ValidateCert:
                 if pre_encoded:
                     wapxmlnode("Certificate", xmlcertchainnode, cert)
                 else:
-                    wapxmlnode("Certificate", xmlcertchainnode, base64.b64encode(cert))
+                    wapxmlnode("Certificate", xmlcertchainnode, base64.b64encode(cert).decode("ascii"))
         xmlcertsnode = wapxmlnode("Certificates", xmlrootnode)
         if pre_encoded:
             xmlcertnode = wapxmlnode("Certificate", xmlcertsnode, certificate)
         else:
-            xmlcertnode = wapxmlnode("Certificate", xmlcertsnode, base64.b64encode(certificate))
+            xmlcertnode = wapxmlnode("Certificate", xmlcertsnode, base64.b64encode(certificate).decode("ascii"))
         if check_crl:
             xmlcertsnode = wapxmlnode("CheckCRL", xmlrootnode, "1")
         return validatecert_xmldoc_req
@@ -60,12 +60,11 @@ class ValidateCert:
         validatecert_validatecert_cert_status = None
 
         for element in validatecert_validatecert_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 validatecert_validatecert_status = element.text
                 if validatecert_validatecert_status != "1":
-                    print "ValidateCert Exception: %s" % validatecert_validatecert_status
+                    print("ValidateCert Exception: %s" % validatecert_validatecert_status)
             elif element.tag == "Certificate":
                 validatecert_validatecert_cert_status = element.get_children()[0].text
         return (validatecert_validatecert_status, validatecert_validatecert_cert_status)
-
 

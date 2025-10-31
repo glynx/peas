@@ -106,7 +106,18 @@ class airsyncbase_Body(object):
                 self.airsyncbase_Preview = element.text
     def marshal(self):
         import base64
-        return "%s//%s//%s//%s//%s//%s" % (repr(self.airsyncbase_Type), repr(self.airsyncbase_EstimatedDataSize), repr(self.airsyncbase_Truncated), base64.b64encode(self.airsyncbase_Data), repr(self.airsyncbase_Part), repr(self.airsyncbase_Preview))
+        if self.airsyncbase_Data is None:
+            encoded_data = repr(self.airsyncbase_Data)
+        else:
+            raw = self.airsyncbase_Data if isinstance(self.airsyncbase_Data, (bytes, bytearray)) else str(self.airsyncbase_Data).encode("utf-8")
+            encoded_data = base64.b64encode(raw).decode("ascii")
+        return "%s//%s//%s//%s//%s//%s" % (
+            repr(self.airsyncbase_Type),
+            repr(self.airsyncbase_EstimatedDataSize),
+            repr(self.airsyncbase_Truncated),
+            encoded_data,
+            repr(self.airsyncbase_Part),
+            repr(self.airsyncbase_Preview))
     def __repr__(self):
         return self.marshal()
 
@@ -171,7 +182,17 @@ class airsyncbase_Attachment(object): #Repsonse-only object.
                 self.email2_UmAttOrder = element.text
     def marshal(self):
         import base64
-        return base64.b64encode("%s//%s//%s//%s//%s//%s//%s//%s//%s" % (repr(self.airsyncbase_DisplayName), repr(self.airsyncbase_FileReference), repr(self.airsyncbase_Method), repr(self.airsyncbase_EstimatedDataSize), repr(self.airsyncbase_ContentId),repr(self.airsyncbase_ContentLocation), repr(self.airsyncbase_IsInline), repr(self.email2_UmAttDuration),repr(self.email2_UmAttOrder)))
+        payload = "%s//%s//%s//%s//%s//%s//%s//%s//%s" % (
+            repr(self.airsyncbase_DisplayName),
+            repr(self.airsyncbase_FileReference),
+            repr(self.airsyncbase_Method),
+            repr(self.airsyncbase_EstimatedDataSize),
+            repr(self.airsyncbase_ContentId),
+            repr(self.airsyncbase_ContentLocation),
+            repr(self.airsyncbase_IsInline),
+            repr(self.email2_UmAttDuration),
+            repr(self.email2_UmAttOrder))
+        return base64.b64encode(payload.encode("utf-8")).decode("ascii")
     def __repr__(self):
         return self.marshal()
 

@@ -19,7 +19,7 @@
 
 """[MS-ASCNTC] Contact objects"""
 
-from MSASEMAIL import airsyncbase_Body
+from .MSASEMAIL import airsyncbase_Body
 
 def parse_contact(data):
     contact_dict = {}

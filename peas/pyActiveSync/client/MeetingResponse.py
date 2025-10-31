@@ -57,7 +57,7 @@ class MeetingResponse:
         responses = []
 
         for element in meetingresponse_meetingresponse_children:
-            if element.tag is "Result":
+            if element.tag == "Result":
                 result_elements = element.get_children()
                 for result_element in result_elements:
                     request_id = None

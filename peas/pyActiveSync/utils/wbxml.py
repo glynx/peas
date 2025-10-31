@@ -18,7 +18,7 @@
 ########################################################################
 
 
-from wapxml import wapxmltree, wapxmlnode
+from .wapxml import wapxmltree, wapxmlnode
 
 class wbxml_parser(object):
     """WBXML Parser"""
@@ -134,7 +134,7 @@ class wbxml_parser(object):
         charset = self.decode_multibyte_integer()
         string_table_len = self.decode_multibyte_integer()
 
-        if charset is not 0x6A:
+        if charset != 0x6A:
             raise AttributeError("Currently, only UTF-8 is used by MS-ASWBXML")
             return
         if string_table_len > 0:
@@ -221,23 +221,35 @@ class wbxml_parser(object):
         raise IndexError("No such code page exists in current object")
 
     def encode_string(self, string):
-        string = str(string)
-        #retarray = bytearray(string, "utf-8")
-        retarray = bytearray(string)
-        retarray.append("\x00")
+        # Always treat content as UTF-8 text per MS-ASWBXML spec.
+        if isinstance(string, (bytes, bytearray)):
+            encoded = bytes(string)
+        else:
+            encoded = str(string).encode("utf-8")
+        retarray = bytearray(encoded)
+        retarray.append(0x00)
         return retarray
 
     def encode_string_as_opaquedata(self, string):
+        if isinstance(string, (bytes, bytearray)):
+            encoded = bytes(string)
+        else:
+            encoded = str(string).encode("utf-8")
         retarray = bytearray()
-        retarray.extend(self.encode_multibyte_integer(len(string)))
-        #retarray.extend(bytearray(string, "utf-8"))
-        retarray.extend(bytearray(string))
+        retarray.extend(self.encode_multibyte_integer(len(encoded)))
+        retarray.extend(encoded)
         return retarray
 
     def encode_hexstring_as_opaquedata(self, hexstring):
+        if isinstance(hexstring, str):
+            data = hexstring.encode("ascii")
+        elif isinstance(hexstring, bytearray):
+            data = bytes(hexstring)
+        else:
+            data = hexstring
         retarray = bytearray()
-        retarray.extend(self.encode_multibyte_integer(len(hexstring)))
-        retarray.extend(hexstring)
+        retarray.extend(self.encode_multibyte_integer(len(data)))
+        retarray.extend(data)
         return retarray
 
     def encode_multibyte_integer(self, integer):
@@ -272,7 +284,7 @@ class wbxml_parser(object):
             for i in range(0, length):
                 retarray.append(self.wbxml[self.pointer])
                 self.pointer+=1
-        return str(retarray)
+        return retarray.decode("utf-8")
 
     def decode_byte(self):
         self.pointer+=1

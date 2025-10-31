@@ -58,10 +58,10 @@ class MoveItems(object):
             status = ""
             dst_id = ""
             for element in response_element:
-                if element.tag is "Status":
+                if element.tag == "Status":
                     status = element.text
                     if status != "3":
-                         print "MoveItems Exception: %s" % status
+                         print("MoveItems Exception: %s" % status)
                 elif element.tag == "SrcMsgId":
                     src_id = element.text
                 elif element.tag == "DstMsgId":
@@ -69,5 +69,4 @@ class MoveItems(object):
             responses.append((src_id, status, dst_id))
 
         return responses
-
 

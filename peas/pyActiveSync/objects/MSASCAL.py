@@ -19,7 +19,7 @@
 
 """[MS-ASCAL] Calendar objects"""
 
-from MSASEMAIL import airsyncbase_Body
+from .MSASEMAIL import airsyncbase_Body
 
 def parse_calendar(data):
     calendar_dict = {}
@@ -202,7 +202,8 @@ class calendar_Attendee(object):
         self.attendee_type = parts[3]
     def marshal_for_storage(self):
         import base64
-        return base64.b64encode("%s%s%s%s%s%s%s%s" % (self.email, self.delim, self.name, self.delim, self.attendee_status, self.delim, self.attendee_type))
+        payload = "%s%s%s%s%s%s%s%s" % (self.email, self.delim, self.name, self.delim, self.attendee_status, self.delim, self.attendee_type)
+        return base64.b64encode(payload.encode("utf-8")).decode("ascii")
 
 class calendar_Recurrence(object):
     def __init__(self):

@@ -57,10 +57,10 @@ class Ping(object):
         max_folders = ""
 
         for element in ping_ping_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 status = element.text
                 if (status != "1") and (status != "2"):
-                     print "Ping Exception: %s" % status
+                     print("Ping Exception: %s" % status)
             elif element.tag == "HeartbeatInterval":
                 heartbeat_interval = element.text
             elif element.tag == "MaxFolders":
@@ -71,4 +71,3 @@ class Ping(object):
                     for folder in folders_list:
                         folders.append(folder.text)
         return (status, heartbeat_interval, max_folders, folders)
-

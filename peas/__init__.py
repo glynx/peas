@@ -1,1 +1,1 @@
-from peas import *
+from .peas import *

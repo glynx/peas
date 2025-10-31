@@ -27,7 +27,7 @@ def main():
     emails = client.extract_emails()
 
     pprint(emails)
-    print
+    print()
 
     print("Extracting all emails with py-eas-client")
     client.set_backend(peas.PY_EAS_CLIENT)
@@ -35,7 +35,7 @@ def main():
     emails = client.extract_emails()
 
     pprint(emails)
-    print
+    print()
 
 
 if __name__ == '__main__':

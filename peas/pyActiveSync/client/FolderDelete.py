@@ -50,10 +50,10 @@ class FolderDelete:
         folderhierarchy_folderdelete_serverid = None
 
         for element in folderhierarchy_folderdelete_children:
-            if element.tag is "Status":
+            if element.tag == "Status":
                 folderhierarchy_folderdelete_status = element.text
                 if folderhierarchy_folderdelete_status != "1":
-                     print "FolderDelete Exception: %s" % folderhierarchy_folderdelete_status
+                     print("FolderDelete Exception: %s" % folderhierarchy_folderdelete_status)
             elif element.tag == "SyncKey":
                 folderhierarchy_folderdelete_synckey = element.text
         return (folderhierarchy_folderdelete_status, folderhierarchy_folderdelete_synckey)

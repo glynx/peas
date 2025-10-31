@@ -17,44 +17,68 @@
 #  MA  02110-1301, USA.
 ########################################################################
 
-import httplib, urllib
+from http import client as http_client
+import base64
+from ...http_logging import log_http_request, log_http_response
+
+
+def _idna_hostname(host):
+    if not host:
+        return host
+    if isinstance(host, bytes):
+        host = host.decode("utf-8")
+    try:
+        return host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return host
 
 class ASHTTPConnector(object):
     """ActiveSync HTTP object"""
+    DEFAULT_DEVICE_ID = "2095f3b9f442a32220d4d54e641bd4aa"
+    DEFAULT_DEVICE_TYPE = "iPhone"
     USER_AGENT = "Outlook-iOS-Android/1.0"
-    POST_URL_TEMPLATE = "/Microsoft-Server-ActiveSync?Cmd=%s&User=%s&DeviceId=2095f3b9f442a32220d4d54e641bd4aa&DeviceType=Outlook"
-    POST_GETATTACHMENT_URL_TEMPLATE = "/Microsoft-Server-ActiveSync?Cmd=%s&AttachmentName=%s&User=%s&DeviceId=2095f3b9f442a32220d4d54e641bd4aa&DeviceType=Outlook"
+    POST_URL_TEMPLATE = "/Microsoft-Server-ActiveSync?Cmd=%s&User=%s&DeviceId=%s&DeviceType=%s"
+    POST_GETATTACHMENT_URL_TEMPLATE = "/Microsoft-Server-ActiveSync?Cmd=%s&AttachmentName=%s&User=%s&DeviceId=%s&DeviceType=%s"
 
-    def __init__(self, server, port=443, ssl=True):
-        
-        self.server = server
+    def __init__(self, server, port=443, ssl=True, device_id=None, device_type=None, user_agent=None):
+        self.server = _idna_hostname(server)
         self.port = port
         self.ssl = ssl
         self.policykey = 0
+        self.device_id = device_id or self.DEFAULT_DEVICE_ID
+        self.device_type = device_type or self.DEFAULT_DEVICE_TYPE
+        ua = user_agent or self.USER_AGENT
         self.headers = {
                         "Content-Type": "application/vnd.ms-sync.wbxml",
-                        "User-Agent" : self.USER_AGENT,
+                        "User-Agent" : ua,
                         "MS-ASProtocolVersion" : "14.1",
                         "Accept-Language" : "en_us"
                         }
         return
 
     def set_credential(self, username, password):
-        import base64
         self.username = username
-        self.credential = base64.b64encode(username+":"+password)
+        credentials = f"{username}:{password}".encode("utf-8")
+        self.credential = base64.b64encode(credentials).decode("ascii")
         self.headers.update({"Authorization" : "Basic " + self.credential})
 
     def do_post(self, url, body, headers, redirected=False):
+        scheme = "https" if self.ssl else "http"
+        default_port = 443 if self.ssl else 80
+        host = self.server if self.port == default_port else f"{self.server}:{self.port}"
+        full_url = f"{scheme}://{host}{url}"
+        log_http_request("POST", full_url, user=getattr(self, "username", None), device_id=self.device_id, device_type=self.device_type)
         if self.ssl:
-            conn = httplib.HTTPSConnection(self.server, self.port)
+            conn = http_client.HTTPSConnection(self.server, self.port)
             conn.request("POST", url, body, headers)
         else:
-            conn = httplib.HTTPConnection(self.server, self.port)
+            conn = http_client.HTTPConnection(self.server, self.port)
             conn.request("POST", url, body, headers)
         res = conn.getresponse()
+        header_map = dict(res.getheaders())
+        log_http_response("POST", full_url, res.status, header_map)
         if res.status == 451:
-            self.server = res.getheader("X-MS-Location").split()[2]
+            self.server = _idna_hostname(res.getheader("X-MS-Location").split()[2])
             if not redirected:
                 return self.do_post(url, body, headers, False)
             else:
@@ -64,7 +88,7 @@ class ASHTTPConnector(object):
 
 
     def post(self, cmd, body):
-        url = self.POST_URL_TEMPLATE % (cmd, self.username)
+        url = self.POST_URL_TEMPLATE % (cmd, self.username, self.device_id, self.device_type)
         res = self.do_post(url, body, self.headers)
         #print res.status, res.reason, res.getheaders()
         return res.read()
@@ -73,7 +97,7 @@ class ASHTTPConnector(object):
         """http://msdn.microsoft.com/en-us/library/ee159875(v=exchg.80).aspx"""
         headers = self.headers
         headers.update({"MS-ASAcceptMultiPart":"T"})
-        url = self.POST_URL_TEMPLATE % ("ItemOperations", self.username)
+        url = self.POST_URL_TEMPLATE % ("ItemOperations", self.username, self.device_id, self.device_type)
         res = self.do_post(url, body, headers)
         if res.getheaders()["Content-Type"] == "application/vnd.ms-sync.multipart":
             PartCount = int(res.read(4))
@@ -90,7 +114,7 @@ class ASHTTPConnector(object):
             raise TypeError("Client requested MultiPart response, but server responsed with inline.")
 
     def get_attachment(self, attachment_name): #attachment_name = DisplayName of attachment from an MSASAIRS.Attachment object
-        url = self.POST_GETATTACHMENT_URL_TEMPLATE  % ("GetAttachment", attachment_name, self.username)
+        url = self.POST_GETATTACHMENT_URL_TEMPLATE  % ("GetAttachment", attachment_name, self.username, self.device_id, self.device_type)
         res = self.do_post(url, "", self.headers)
         try:
             content_type = res.getheader("Content-Type")
@@ -100,23 +124,33 @@ class ASHTTPConnector(object):
         return res.read(), res.status, content_type
 
     def get_options(self):
-        conn = httplib.HTTPSConnection(self.server, self.port)
-        conn.request("OPTIONS", "/Microsoft-Server-ActiveSync", None, self.headers)
+        scheme = "https" if self.ssl else "http"
+        default_port = 443 if self.ssl else 80
+        host = self.server if self.port == default_port else f"{self.server}:{self.port}"
+        path = "/Microsoft-Server-ActiveSync"
+        full_url = f"{scheme}://{host}{path}"
+        log_http_request("OPTIONS", full_url, user=getattr(self, "username", None), device_id=self.device_id, device_type=self.device_type)
+        if self.ssl:
+            conn = http_client.HTTPSConnection(self.server, self.port)
+        else:
+            conn = http_client.HTTPConnection(self.server, self.port)
+        conn.request("OPTIONS", path, None, self.headers)
         res = conn.getresponse()
+        log_http_response("OPTIONS", full_url, res.status, dict(res.getheaders()))
         return res
 
     def options(self):
         res = self.get_options()
-        if res.status is 200:
+        if res.status == 200:
             self._server_protocol_versions = res.getheader("ms-asprotocolversions")
             self._server_protocol_commands = res.getheader("ms-asprotocolcommands")
             self._server_version = res.getheader("ms-server-activesync")
             return True
         else:
-            print "Connection Error!:"
-            print res.status, res.reason
+            print("Connection Error!:")
+            print(res.status, res.reason)
             for header in res.getheaders():
-                print header[0]+":",header[1]
+                print(f"{header[0]}:", header[1])
             return False
 
     def get_policykey(self):

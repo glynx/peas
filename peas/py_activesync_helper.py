@@ -18,24 +18,27 @@
 ########################################################################\
 
 import ssl
+import re
+import uuid
+from pathlib import Path
 
 # https://docs.python.org/2/library/xml.html#xml-vulnerabilities
 from lxml import etree as ElementTree
 
-from pyActiveSync.utils.as_code_pages import as_code_pages
-from pyActiveSync.utils.wbxml import wbxml_parser
-from pyActiveSync.client.storage import storage
+from .pyActiveSync.utils.as_code_pages import as_code_pages
+from .pyActiveSync.utils.wbxml import wbxml_parser
+from .pyActiveSync.client.storage import storage
 
-from pyActiveSync.client.FolderSync import FolderSync
-from pyActiveSync.client.Sync import Sync
-from pyActiveSync.client.GetItemEstimate import GetItemEstimate
-from pyActiveSync.client.Provision import Provision
-from pyActiveSync.client.Search import Search
-from pyActiveSync.client.ItemOperations import ItemOperations
+from .pyActiveSync.client.FolderSync import FolderSync
+from .pyActiveSync.client.Sync import Sync
+from .pyActiveSync.client.GetItemEstimate import GetItemEstimate
+from .pyActiveSync.client.Provision import Provision
+from .pyActiveSync.client.Search import Search
+from .pyActiveSync.client.ItemOperations import ItemOperations
 
-from pyActiveSync.objects.MSASHTTP import ASHTTPConnector
-from pyActiveSync.objects.MSASCMD import as_status
-from pyActiveSync.objects.MSASAIRS import airsync_FilterType, airsync_Conflict, airsync_MIMETruncation, \
+from .pyActiveSync.objects.MSASHTTP import ASHTTPConnector
+from .pyActiveSync.objects.MSASCMD import as_status
+from .pyActiveSync.objects.MSASAIRS import airsync_FilterType, airsync_Conflict, airsync_MIMETruncation, \
     airsync_MIMESupport, \
     airsync_Class, airsyncbase_Type
 
@@ -43,16 +46,55 @@ from pyActiveSync.objects.MSASAIRS import airsync_FilterType, airsync_Conflict, 
 # Create WBXML parser instance.
 parser = wbxml_parser(*as_code_pages.build_as_code_pages())
 
+LAST_GETITEMESTIMATE = []
+
+
+def _ensure_device_profile(creds):
+    if not creds.get('device_id'):
+        creds['device_id'] = uuid.uuid4().hex[:32]
+    if not creds.get('device_type'):
+        creds['device_type'] = ASHTTPConnector.DEFAULT_DEVICE_TYPE
+    if not creds.get('user_agent'):
+        creds['user_agent'] = ASHTTPConnector.USER_AGENT
+    return creds['device_id'], creds['device_type'], creds['user_agent']
+
+
+def _sanitize(value, default="default"):
+    if not value:
+        return default
+    return re.sub(r"[^A-Za-z0-9._-]", "_", str(value))
+
+
+def _get_db_path(creds):
+    server_component = _sanitize(creds.get("server"), "server")
+    user_component = _sanitize(creds.get("user"), "account")
+    base_dir = Path.cwd() / "pyas_cache" / server_component
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return str(base_dir / f"{user_component}.asdb")
+
 
 def _parse_for_emails(res, emails):
 
     data = str(res)
+    if not data.strip():
+        return
+
+    try:
+        payload = data.encode("utf-8")
+    except UnicodeError:
+        payload = data
 
     etparser = ElementTree.XMLParser(recover=True)
-    tree = ElementTree.fromstring(data, etparser)
+    try:
+        tree = ElementTree.fromstring(payload, etparser)
+    except (ElementTree.XMLSyntaxError, ValueError):
+        return
+    if tree is None:
+        return
 
     for item in tree.iter('{airsync:}ApplicationData'):
-        s = ElementTree.tostring(item)
+        # Ask lxml to hand back a Python str so downstream code always deals with text.
+        s = ElementTree.tostring(item, encoding='unicode')
         emails.append(s)
 
 
@@ -68,33 +110,33 @@ def as_request(as_conn, cmd, wapxml_req):
 
 #Provision functions
 def do_apply_eas_policies(policies):
-    for policy in policies.keys():
+    for policy in policies:
         #print "Virtually applying %s = %s" % (policy, policies[policy])
         pass
     return True
 
 
-def do_provision(as_conn, device_info):
+def do_provision(as_conn, device_info, db_path):
     provision_xmldoc_req = Provision.build("0", device_info)
     as_conn.set_policykey("0")
     provision_xmldoc_res = as_request(as_conn, "Provision", provision_xmldoc_req)
     status, policystatus, policykey, policytype, policydict, settings_status = Provision.parse(provision_xmldoc_res)
     as_conn.set_policykey(policykey)
-    storage.update_keyvalue("X-MS-PolicyKey", policykey)
-    storage.update_keyvalue("EASPolicies", repr(policydict))
+    storage.update_keyvalue("X-MS-PolicyKey", policykey, path=db_path)
+    storage.update_keyvalue("EASPolicies", repr(policydict), path=db_path)
     if do_apply_eas_policies(policydict):
         provision_xmldoc_req = Provision.build(policykey)
         provision_xmldoc_res = as_request(as_conn, "Provision", provision_xmldoc_req)
         status, policystatus, policykey, policytype, policydict, settings_status = Provision.parse(provision_xmldoc_res)
         if status == "1":
             as_conn.set_policykey(policykey)
-            storage.update_keyvalue("X-MS-PolicyKey", policykey)
+            storage.update_keyvalue("X-MS-PolicyKey", policykey, path=db_path)
 
 
 #Sync function
-def do_sync(as_conn, curs, collections, emails_out):
+def do_sync(as_conn, curs, collections, emails_out, db_path):
 
-    as_sync_xmldoc_req = Sync.build(storage.get_synckeys_dict(curs), collections)
+    as_sync_xmldoc_req = Sync.build(storage.get_synckeys_dict(curs, path=db_path), collections)
     #print "\r\nSync Request:"
     #print as_sync_xmldoc_req
     res = as_conn.post("Sync", parser.encode(as_sync_xmldoc_req))
@@ -103,27 +145,31 @@ def do_sync(as_conn, curs, collections, emails_out):
         #print "Nothing to Sync!"
         pass
     else:
-        collectionid_to_type_dict = storage.get_serverid_to_type_dict()
+        collectionid_to_type_dict = storage.get_serverid_to_type_dict(path=db_path)
         as_sync_xmldoc_res = parser.decode(res)
         #print type(as_sync_xmldoc_res), dir(as_sync_xmldoc_res), as_sync_xmldoc_res
 
         _parse_for_emails(as_sync_xmldoc_res, emails_out)
 
-        sync_res = Sync.parse(as_sync_xmldoc_res, collectionid_to_type_dict)
-        storage.update_items(sync_res)
+        try:
+            sync_res = Sync.parse(as_sync_xmldoc_res, collectionid_to_type_dict)
+        except AttributeError as exc:
+            print("Sync parse failed:", exc)
+            return None
+        storage.update_items(sync_res, path=db_path)
         return sync_res
 
 
 #GetItemsEstimate
-def do_getitemestimates(as_conn, curs, collection_ids, gie_options):
-    getitemestimate_xmldoc_req = GetItemEstimate.build(storage.get_synckeys_dict(curs), collection_ids, gie_options)
+def do_getitemestimates(as_conn, curs, collection_ids, gie_options, db_path):
+    getitemestimate_xmldoc_req = GetItemEstimate.build(storage.get_synckeys_dict(curs, path=db_path), collection_ids, gie_options)
     getitemestimate_xmldoc_res = as_request(as_conn, "GetItemEstimate", getitemestimate_xmldoc_req)
 
     getitemestimate_res = GetItemEstimate.parse(getitemestimate_xmldoc_res)
     return getitemestimate_res
 
 
-def getitemestimate_check_prime_collections(as_conn, curs, getitemestimate_responses, emails_out):
+def getitemestimate_check_prime_collections(as_conn, curs, getitemestimate_responses, emails_out, db_path):
     has_synckey = []
     needs_synckey = {}
     for response in getitemestimate_responses:
@@ -142,18 +188,26 @@ def getitemestimate_check_prime_collections(as_conn, curs, getitemestimate_respo
             #print as_status("GetItemEstimate", response.Status)
             pass
     if len(needs_synckey) > 0:
-        do_sync(as_conn, curs, needs_synckey, emails_out)
+        do_sync(as_conn, curs, needs_synckey, emails_out, db_path)
     return has_synckey, needs_synckey
 
 
-def sync(as_conn, curs, collections, collection_sync_params, gie_options, emails_out):
-    getitemestimate_responses = do_getitemestimates(as_conn, curs, collections, gie_options)
+def sync(as_conn, curs, collections, collection_sync_params, gie_options, emails_out, db_path):
+    getitemestimate_responses = do_getitemestimates(as_conn, curs, collections, gie_options, db_path)
+
+    global LAST_GETITEMESTIMATE
+    LAST_GETITEMESTIMATE = [
+        (resp.CollectionId, resp.Status, resp.Estimate) for resp in getitemestimate_responses
+    ]
 
     has_synckey, just_got_synckey = getitemestimate_check_prime_collections(as_conn, curs, getitemestimate_responses,
-                                                                            emails_out)
+                                                                            emails_out, db_path)
 
-    if (len(has_synckey) < collections) or (len(just_got_synckey) > 0):  #grab new estimates, since they changed
-        getitemestimate_responses = do_getitemestimates(as_conn, curs, has_synckey, gie_options)
+    if (len(has_synckey) < len(collections)) or (len(just_got_synckey) > 0):  #grab new estimates, since they changed
+        getitemestimate_responses = do_getitemestimates(as_conn, curs, has_synckey, gie_options, db_path)
+        LAST_GETITEMESTIMATE = [
+            (resp.CollectionId, resp.Status, resp.Estimate) for resp in getitemestimate_responses
+        ]
 
     collections_to_sync = {}
 
@@ -166,16 +220,16 @@ def sync(as_conn, curs, collections, collection_sync_params, gie_options, emails
             pass
 
     if len(collections_to_sync) > 0:
-        sync_res = do_sync(as_conn, curs, collections_to_sync, emails_out)
+        sync_res = do_sync(as_conn, curs, collections_to_sync, emails_out, db_path)
 
         if sync_res:
             while True:
                 for coll_res in sync_res:
                     if coll_res.MoreAvailable is None:
                         del collections_to_sync[coll_res.CollectionId]
-                if len(collections_to_sync.keys()) > 0:
+                if collections_to_sync:
                     #print "Collections to sync:", collections_to_sync
-                    sync_res = do_sync(as_conn, curs, collections_to_sync, emails_out)
+                    sync_res = do_sync(as_conn, curs, collections_to_sync, emails_out, db_path)
                 else:
                     break
 
@@ -187,10 +241,14 @@ def disable_certificate_verification():
 
 def extract_emails(creds):
 
-    storage.erase_db()
-    storage.create_db_if_none()
+    db_path = _get_db_path(creds)
+    print(f"ActiveSync cache: {db_path}")
 
-    conn, curs = storage.get_conn_curs()
+    storage.erase_db(path=db_path)
+    storage.create_db_if_none(path=db_path)
+
+    conn, curs = storage.get_conn_curs(path=db_path)
+    device_id, device_type, user_agent = _ensure_device_profile(creds)
     device_info = {
         "Model": "Outlook for iOS and Android",
         "IMEI": "2095f3b9f442a32220d4d54e641bd4aa",
@@ -199,21 +257,28 @@ def extract_emails(creds):
         "OSLanguage": "en-us",
         "PhoneNumber": "NA",
         "MobileOperator": "NA",
-        "UserAgent": "Outlook-iOS-Android/1.0"
+        "UserAgent": user_agent,
+        "DeviceId": device_id,
+        "DeviceType": device_type,
     }
 
     #create ActiveSync connector
-    as_conn = ASHTTPConnector(creds['server'])  #e.g. "as.myserver.com"
+    as_conn = ASHTTPConnector(
+        creds['server'],
+        device_id=device_id,
+        device_type=device_type,
+        user_agent=user_agent,
+    )  #e.g. "as.myserver.com"
     as_conn.set_credential(creds['user'], creds['password'])
 
     #FolderSync + Provision
-    foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0"))
+    foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0", path=db_path))
     foldersync_xmldoc_res = as_request(as_conn, "FolderSync", foldersync_xmldoc_req)
     changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
     if 138 < int(status) < 145:
         ret = as_status("FolderSync", status)
         #print ret
-        do_provision(as_conn, device_info)
+        do_provision(as_conn, device_info, db_path)
         foldersync_xmldoc_res = as_request(as_conn, "FolderSync", foldersync_xmldoc_req)
         changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
         if 138 < int(status) < 145:
@@ -221,22 +286,71 @@ def extract_emails(creds):
             #print ret
             raise Exception("Unresolvable provisioning error: %s. Cannot continue..." % status)
     if len(changes) > 0:
-        storage.update_folderhierarchy(changes)
-        storage.update_synckey(synckey, "0", curs)
+        storage.update_folderhierarchy(changes, path=db_path)
+        storage.update_synckey(synckey, "0", curs, path=db_path)
         conn.commit()
 
-    collection_id_of = storage.get_folder_name_to_id_dict()
+    collection_id_of = storage.get_folder_name_to_id_dict(path=db_path)
 
-    inbox = collection_id_of["Inbox"]
+    folder_choice = creds.get("folder")
+    target_folder_id = None
+    target_folder_name = None
+
+    if folder_choice:
+        desired = str(folder_choice).strip()
+        for name, cid in collection_id_of.items():
+            if cid == desired or name.strip().lower() == desired.lower():
+                target_folder_id = cid
+                target_folder_name = name
+                break
+        if not target_folder_id:
+            print("Folder mapping from server:", collection_id_of)
+            raise RuntimeError(
+                f"Folder '{folder_choice}' was not returned by FolderSync; cannot continue email extraction."
+            )
+    else:
+        target_folder_id = storage.get_folder_id_by_type(2, path=db_path)
+        if target_folder_id:
+            target_folder_name = next(
+                (name for name, cid in collection_id_of.items() if cid == target_folder_id),
+                "Inbox",
+            )
+        else:
+            inbox_fallback = next(
+                (
+                    cid
+                    for name, cid in collection_id_of.items()
+                    if name.strip().lower() == "inbox"
+                ),
+                None,
+            )
+            if inbox_fallback:
+                target_folder_id = inbox_fallback
+                target_folder_name = next(
+                    (name for name, cid in collection_id_of.items() if cid == target_folder_id),
+                    "Inbox",
+                )
+
+        if not target_folder_id:
+            print("Folder mapping from server:", collection_id_of)
+            raise RuntimeError(
+                "Inbox folder (type 2) not present in FolderSync results; cannot continue email extraction."
+            )
+
+    if not target_folder_name:
+        target_folder_name = next(
+            (name for name, cid in collection_id_of.items() if cid == target_folder_id),
+            target_folder_id,
+        )
 
     collection_sync_params = {
-        inbox:
+        target_folder_id:
             {  #"Supported":"",
                #"DeletesAsMoves":"1",
                #"GetChanges":"1",
                "WindowSize": "512",
                "Options": {
-                   "FilterType": airsync_FilterType.OneMonth,
+                   "FilterType": airsync_FilterType.NoFilter,
                    "Conflict": airsync_Conflict.ServerReplacesClient,
                    "MIMETruncation": airsync_MIMETruncation.TruncateNone,
                    "MIMESupport": airsync_MIMESupport.SMIMEOnly,
@@ -266,29 +380,107 @@ def extract_emails(creds):
     }
 
     gie_options = {
-        inbox:
+        target_folder_id:
             {  #"ConversationMode": "0",
                "Class": airsync_Class.Email,
-               "FilterType": airsync_FilterType.OneMonth
+               "FilterType": airsync_FilterType.NoFilter
                #"MaxItems": "" #Recipient information cache sync requests only. Max number of frequently used contacts.
                },
     }
 
-    collections = [inbox]
+    collections = [target_folder_id]
     emails = []
 
-    sync(as_conn, curs, collections, collection_sync_params, gie_options, emails)
+    sync(as_conn, curs, collections, collection_sync_params, gie_options, emails, db_path)
 
     if storage.close_conn_curs(conn):
         del conn, curs
 
+    if not emails:
+        print(
+            f"No emails returned by ActiveSync for folder '{target_folder_name}' (ID {target_folder_id}); "
+            f"GetItemEstimate responses: {LAST_GETITEMESTIMATE}"
+        )
+
     return emails
+
+
+def list_folders(creds):
+
+    db_path = _get_db_path(creds)
+    print(f"ActiveSync cache: {db_path}")
+
+    storage.erase_db(path=db_path)
+    storage.create_db_if_none(path=db_path)
+
+    conn, curs = storage.get_conn_curs(path=db_path)
+    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    device_info = {
+        "Model": "Outlook for iOS and Android",
+        "IMEI": "2095f3b9f442a32220d4d54e641bd4aa",
+        "FriendlyName": "Outlook for iOS and Android",
+        "OS": "OutlookBasicAuth",
+        "OSLanguage": "en-us",
+        "PhoneNumber": "NA",
+        "MobileOperator": "NA",
+        "UserAgent": user_agent,
+        "DeviceId": device_id,
+        "DeviceType": device_type,
+    }
+
+    as_conn = ASHTTPConnector(
+        creds['server'],
+        device_id=device_id,
+        device_type=device_type,
+        user_agent=user_agent,
+    )
+    as_conn.set_credential(creds['user'], creds['password'])
+
+    foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0", path=db_path))
+    foldersync_xmldoc_res = as_request(as_conn, "FolderSync", foldersync_xmldoc_req)
+    changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
+    if 138 < int(status) < 145:
+        do_provision(as_conn, device_info, db_path)
+        foldersync_xmldoc_res = as_request(as_conn, "FolderSync", foldersync_xmldoc_req)
+        changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
+        if 138 < int(status) < 145:
+            raise Exception(f"Unresolvable provisioning error: {status}. Cannot continue...")
+
+    if len(changes) > 0:
+        storage.update_folderhierarchy(changes, path=db_path)
+        storage.update_synckey(synckey, "0", curs, path=db_path)
+        conn.commit()
+    else:
+        storage.update_synckey(synckey, "0", curs, path=db_path)
+        conn.commit()
+
+    rows = storage.get_all_folders(path=db_path)
+    storage.close_conn_curs(conn)
+
+    folders = []
+    for server_id, parent_id, display_name, ftype in rows:
+        folders.append(
+            {
+                "ServerId": server_id,
+                "ParentId": parent_id,
+                "DisplayName": display_name,
+                "Type": ftype,
+            }
+        )
+
+    return folders
 
 
 def get_unc_listing(creds, unc_path, username=None, password=None):
 
     # Create ActiveSync connector.
-    as_conn = ASHTTPConnector(creds['server'])
+    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    as_conn = ASHTTPConnector(
+        creds['server'],
+        device_id=device_id,
+        device_type=device_type,
+        user_agent=user_agent,
+    )
     as_conn.set_credential(creds['user'], creds['password'])
 
     # Perform request.
@@ -303,7 +495,13 @@ def get_unc_listing(creds, unc_path, username=None, password=None):
 def get_unc_file(creds, unc_path, username=None, password=None):
 
     # Create ActiveSync connector.
-    as_conn = ASHTTPConnector(creds['server'])
+    device_id, device_type, user_agent = _ensure_device_profile(creds)
+    as_conn = ASHTTPConnector(
+        creds['server'],
+        device_id=device_id,
+        device_type=device_type,
+        user_agent=user_agent,
+    )
     as_conn.set_credential(creds['user'], creds['password'])
 
     # Perform request.

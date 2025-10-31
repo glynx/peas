@@ -114,11 +114,11 @@ class Sync:
                 return parse_task(item), content_class
             elif content_class == "Notes":
                 return parse_note(item), content_class
-        except Exception, e:
+        except Exception as e:
             if collectionid_to_type_dict:
                 return Sync.parse_item(item, collection_id, None)
             else:
-                print e
+                print(e)
                 pass
         raise LookupError("Could not determine content class of item for parsing. \r\n------\r\nItem:\r\n%s" % repr(item))
 
@@ -139,7 +139,7 @@ class Sync:
             raise AttributeError("%s response does not conform to any known %s responses." % (root_tag, root_tag))
         if airsyncbase_sync_children[0].tag == "Status":
             if airsyncbase_sync_children[0].text == "4":
-                print "Sync Status: 4, Protocol Error."
+                print("Sync Status: 4, Protocol Error.")
         if airsyncbase_sync_children[0].tag != "Collections":
             raise AttributeError("%s response does not conform to any known %s responses." % (root_tag, root_tag))
 
@@ -185,7 +185,7 @@ class Sync:
                             new_collection.Commands.append(("SoftDelete", airsyncbase_sync_commands_children[commands_counter].get_children()[0].text))
                         commands_counter+=1
                 elif airsyncbase_sync_collection_children[collection_counter].tag == "Responses":
-                    print airsyncbase_sync_collection_children[collection_counter]
+                    print(airsyncbase_sync_collection_children[collection_counter])
                 collection_counter+=1
             response.append(new_collection)
             collections_counter+=1

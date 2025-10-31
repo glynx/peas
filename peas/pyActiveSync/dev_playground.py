@@ -73,19 +73,19 @@ if policykey:
 
 
 def as_request(cmd, wapxml_req):
-    print "\r\n%s Request:" % cmd
-    print wapxml_req
+    print("\r\n%s Request:" % cmd)
+    print(wapxml_req)
     res = as_conn.post(cmd, parser.encode(wapxml_req))
     wapxml_res = parser.decode(res)
-    print "\r\n%s Response:" % cmd
-    print wapxml_res
+    print("\r\n%s Response:" % cmd)
+    print(wapxml_res)
     return wapxml_res
 
 
 #Provision functions
 def do_apply_eas_policies(policies):
     for policy in policies.keys():
-        print "Virtually applying %s = %s" % (policy, policies[policy])
+        print("Virtually applying %s = %s" % (policy, policies[policy]))
     return True
 
 
@@ -110,12 +110,12 @@ foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0"))
 foldersync_xmldoc_res = as_request("FolderSync", foldersync_xmldoc_req)
 changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
 if int(status) > 138 and int(status) < 145:
-    print as_status("FolderSync", status)
+    print(as_status("FolderSync", status))
     do_provision()
     foldersync_xmldoc_res = as_request("FolderSync", foldersync_xmldoc_req)
     changes, synckey, status = FolderSync.parse(foldersync_xmldoc_res)
     if int(status) > 138 and int(status) < 145:
-        print as_status("FolderSync", status)
+        print(as_status("FolderSync", status))
         raise Exception("Unresolvable provisoning error: %s. Cannot continue..." % status)
 if len(changes) > 0:
     storage.update_folderhierarchy(changes)
@@ -368,16 +368,16 @@ gie_options = {
 #Sync function
 def do_sync(collections):
     as_sync_xmldoc_req = Sync.build(storage.get_synckeys_dict(curs), collections)
-    print "\r\nRequest:"
-    print as_sync_xmldoc_req
+    print("\r\nRequest:")
+    print(as_sync_xmldoc_req)
     res = as_conn.post("Sync", parser.encode(as_sync_xmldoc_req))
-    print "\r\nResponse:"
+    print("\r\nResponse:")
     if res == '':
-        print "Nothing to Sync!"
+        print("Nothing to Sync!")
     else:
         collectionid_to_type_dict = storage.get_serverid_to_type_dict()
         as_sync_xmldoc_res = parser.decode(res)
-        print as_sync_xmldoc_res
+        print(as_sync_xmldoc_res)
         sync_res = Sync.parse(as_sync_xmldoc_res, collectionid_to_type_dict)
         storage.update_items(sync_res)
         return sync_res
@@ -399,14 +399,14 @@ def getitemestimate_check_prime_collections(getitemestimate_responses):
         if response.Status == "1":
             has_synckey.append(response.CollectionId)
         elif response.Status == "2":
-            print "GetItemEstimate Status: Unknown CollectionId (%s) specified. Removing." % response.CollectionId
+            print("GetItemEstimate Status: Unknown CollectionId (%s) specified. Removing." % response.CollectionId)
         elif response.Status == "3":
-            print "GetItemEstimate Status: Sync needs to be primed."
+            print("GetItemEstimate Status: Sync needs to be primed.")
             needs_synckey.update({response.CollectionId: {}})
             has_synckey.append(
                 response.CollectionId)  #technically *will* have synckey after do_sync() need end of function
         else:
-            print as_status("GetItemEstimate", response.Status)
+            print(as_status("GetItemEstimate", response.Status))
     if len(needs_synckey) > 0:
         do_sync(needs_synckey)
     return has_synckey, needs_synckey
@@ -427,7 +427,7 @@ def sync(collections):
             if int(response.Estimate) > 0:
                 collections_to_sync.update({response.CollectionId: collection_sync_params[response.CollectionId]})
         else:
-            print "GetItemEstimate Status (error): %s, CollectionId: %s." % (response.Status, response.CollectionId)
+            print("GetItemEstimate Status (error): %s, CollectionId: %s." % (response.Status, response.CollectionId))
 
     if len(collections_to_sync) > 0:
         sync_res = do_sync(collections_to_sync)
@@ -437,7 +437,7 @@ def sync(collections):
                     if coll_res.MoreAvailable is None:
                         del collections_to_sync[coll_res.CollectionId]
                 if len(collections_to_sync.keys()) > 0:
-                    print collections_to_sync
+                    print(collections_to_sync)
                     sync_res = do_sync(collections_to_sync)
                 else:
                     break

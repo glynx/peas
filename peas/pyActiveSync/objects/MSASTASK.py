@@ -19,7 +19,7 @@
 
 """[MS-ASTASK] Task objects"""
 
-from MSASEMAIL import airsyncbase_Body
+from .MSASEMAIL import airsyncbase_Body
 
 def parse_task(data):
     task_dict = {}
