@@ -49,24 +49,30 @@ parser = wbxml_parser(*as_code_pages.build_as_code_pages())
 LAST_GETITEMESTIMATE = []
 
 
-def _ensure_device_profile(creds):
-    if not creds.get('device_id'):
-        creds['device_id'] = uuid.uuid4().hex[:32]
-    if not creds.get('device_type'):
-        creds['device_type'] = ASHTTPConnector.DEFAULT_DEVICE_TYPE
-    if not creds.get('user_agent'):
-        creds['user_agent'] = ASHTTPConnector.USER_AGENT
-    if not creds.get('device_os'):
-        creds['device_os'] = 'OutlookBasicAuth'
-    if not creds.get('device_imei'):
-        creds['device_imei'] = ASHTTPConnector.DEFAULT_DEVICE_ID
-    return (
-        creds['device_id'],
-        creds['device_type'],
-        creds['user_agent'],
-        creds['device_os'],
-        creds['device_imei'],
+def http_connector_from_creds(creds: dict[str, str]) -> ASHTTPConnector:
+    connector = ASHTTPConnector(
+        creds['server'],
+        device_id=creds['device_id'],
+        device_type=creds['device_type'],
+        user_agent=creds['user_agent'],
     )
+    connector.set_credential(creds['user'], creds['password'])
+    return connector
+
+
+def device_info_from_creds(creds: dict[str, str]) -> dict[str, str]:
+    return {
+        'UserAgent': creds['user_agent'],
+        'DeviceId': creds['device_id'],  # likely unused
+        'DeviceType': creds['device_type'],  # likely unused
+        'Model': creds['device_model'],
+        'IMEI': creds['device_imei'],
+        'FriendlyName': creds['device_name'],
+        'OS': creds['device_os'],
+        'OSLanguage': creds['device_language'],
+        'PhoneNumber': creds['device_phone_number'],
+        'MobileOperator': creds['device_mobile_operator'],
+    }
 
 
 def _sanitize(value, default="default"):
@@ -126,11 +132,22 @@ def do_apply_eas_policies(policies):
     return True
 
 
+def provision_device(creds):
+    db_path = _get_db_path(creds)
+    print(f"ActiveSync cache: {db_path}")
+    storage.erase_db(path=db_path)
+    storage.create_db_if_none(path=db_path)
+    device_info = device_info_from_creds(creds)
+    as_conn = http_connector_from_creds(creds)
+    do_provision(as_conn, device_info, db_path)
+
+
 def do_provision(as_conn, device_info, db_path):
     provision_xmldoc_req = Provision.build("0", device_info)
     as_conn.set_policykey("0")
     provision_xmldoc_res = as_request(as_conn, "Provision", provision_xmldoc_req)
     status, policystatus, policykey, policytype, policydict, settings_status = Provision.parse(provision_xmldoc_res)
+    print(status, policystatus, policykey, policytype, policydict, settings_status)
     as_conn.set_policykey(policykey)
     storage.update_keyvalue("X-MS-PolicyKey", policykey, path=db_path)
     storage.update_keyvalue("EASPolicies", repr(policydict), path=db_path)
@@ -138,6 +155,7 @@ def do_provision(as_conn, device_info, db_path):
         provision_xmldoc_req = Provision.build(policykey)
         provision_xmldoc_res = as_request(as_conn, "Provision", provision_xmldoc_req)
         status, policystatus, policykey, policytype, policydict, settings_status = Provision.parse(provision_xmldoc_res)
+        print(status, policystatus, policykey, policytype, policydict, settings_status)
         if status == "1":
             as_conn.set_policykey(policykey)
             storage.update_keyvalue("X-MS-PolicyKey", policykey, path=db_path)
@@ -245,12 +263,10 @@ def sync(as_conn, curs, collections, collection_sync_params, gie_options, emails
 
 
 def disable_certificate_verification():
-
     ssl._create_default_https_context = ssl._create_unverified_context
 
 
 def extract_emails(creds):
-
     db_path = _get_db_path(creds)
     print(f"ActiveSync cache: {db_path}")
 
@@ -258,28 +274,10 @@ def extract_emails(creds):
     storage.create_db_if_none(path=db_path)
 
     conn, curs = storage.get_conn_curs(path=db_path)
-    device_id, device_type, user_agent, device_os, device_imei = _ensure_device_profile(creds)
-    device_info = {
-        "Model": "Outlook for iOS and Android",
-        "IMEI": "2095f3b9f442a32220d4d54e641bd4aa",
-        "FriendlyName": "Outlook for iOS and Android",
-        "OS": device_os,
-        "OSLanguage": "en-us",
-        "PhoneNumber": "NA",
-        "MobileOperator": "NA",
-        "UserAgent": user_agent,
-        "DeviceId": device_id,
-        "DeviceType": device_type,
-    }
+    device_info = device_info_from_creds(creds)
 
     #create ActiveSync connector
-    as_conn = ASHTTPConnector(
-        creds['server'],
-        device_id=device_id,
-        device_type=device_type,
-        user_agent=user_agent,
-    )  #e.g. "as.myserver.com"
-    as_conn.set_credential(creds['user'], creds['password'])
+    as_conn = http_connector_from_creds(creds)
 
     #FolderSync + Provision
     foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0", path=db_path))
@@ -416,7 +414,6 @@ def extract_emails(creds):
 
 
 def list_folders(creds):
-
     db_path = _get_db_path(creds)
     print(f"ActiveSync cache: {db_path}")
 
@@ -424,27 +421,8 @@ def list_folders(creds):
     storage.create_db_if_none(path=db_path)
 
     conn, curs = storage.get_conn_curs(path=db_path)
-    device_id, device_type, user_agent, device_os, device_imei = _ensure_device_profile(creds)
-    device_info = {
-        "Model": "Outlook for iOS and Android",
-        "IMEI": device_imei,
-        "FriendlyName": "Outlook for iOS and Android",
-        "OS": device_os,
-        "OSLanguage": "en-us",
-        "PhoneNumber": "NA",
-        "MobileOperator": "NA",
-        "UserAgent": user_agent,
-        "DeviceId": device_id,
-        "DeviceType": device_type,
-    }
-
-    as_conn = ASHTTPConnector(
-        creds['server'],
-        device_id=device_id,
-        device_type=device_type,
-        user_agent=user_agent,
-    )
-    as_conn.set_credential(creds['user'], creds['password'])
+    device_info = device_info_from_creds(creds)
+    as_conn = http_connector_from_creds(creds)
 
     foldersync_xmldoc_req = FolderSync.build(storage.get_synckey("0", path=db_path))
     foldersync_xmldoc_res = as_request(as_conn, "FolderSync", foldersync_xmldoc_req)
@@ -482,20 +460,12 @@ def list_folders(creds):
 
 
 def get_unc_listing(creds, unc_path, username=None, password=None):
-
-    # Create ActiveSync connector.
-    device_id, device_type, user_agent, _, _ = _ensure_device_profile(creds)
-    as_conn = ASHTTPConnector(
-        creds['server'],
-        device_id=device_id,
-        device_type=device_type,
-        user_agent=user_agent,
-    )
-    as_conn.set_credential(creds['user'], creds['password'])
+    as_conn = http_connector_from_creds(creds)
 
     # Perform request.
     search_xmldoc_req = Search.build(unc_path, username=username, password=password)
     search_xmldoc_res = as_request(as_conn, "Search", search_xmldoc_req)
+    #print(search_xmldoc_res)
 
     # Parse response.
     status, records = Search.parse(search_xmldoc_res)
@@ -503,16 +473,7 @@ def get_unc_listing(creds, unc_path, username=None, password=None):
 
 
 def get_unc_file(creds, unc_path, username=None, password=None):
-
-    # Create ActiveSync connector.
-    device_id, device_type, user_agent, _, _ = _ensure_device_profile(creds)
-    as_conn = ASHTTPConnector(
-        creds['server'],
-        device_id=device_id,
-        device_type=device_type,
-        user_agent=user_agent,
-    )
-    as_conn.set_credential(creds['user'], creds['password'])
+    as_conn = http_connector_from_creds(creds)
 
     # Perform request.
     operation = {'Name': 'Fetch', 'Store': 'DocumentLibrary', 'LinkId': unc_path}

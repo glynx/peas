@@ -1,246 +1,111 @@
-__author__ = 'Adam Rutherford'
-
-import sys
-import os
-import hashlib
-import errno
 import base64
 import binascii
+import errno
+import hashlib
+import os
+import random
+import string
+import sys
+
+from argparse import ArgumentParser, BooleanOptionalAction, Namespace
+from pathlib import Path, PureWindowsPath
 from random import choice
 from string import ascii_uppercase, digits
-from optparse import OptionParser
 
 import peas
-from pathlib import Path, PureWindowsPath
-
-R = '\033[1;31m'  # RED
-G = '\033[0;32m'  # GREEN
-Y = '\033[0;33m'  # YELLOW
-M = '\033[0;35m'  # MAGENTA
-S = '\033[0m'     # RESET
 
 
-def info(msg):
+R = '\033[1;31m'  # red
+G = '\033[0;32m'  # green
+Y = '\033[0;33m'  # yellow
+M = '\033[0;35m'  # magenta
+S = '\033[0m'     # reset
+
+
+def info(msg: str) -> None:
     sys.stdout.write('{0}[*] {1}{2}\n'.format(G, msg, S))
 
 
-def warning(msg):
+def warning(msg: str) -> None:
     sys.stdout.write('{0}[!] {1}{2}\n'.format(Y, msg, S))
 
 
-def error(msg):
+def error(msg: str) -> None:
     sys.stderr.write('{0}[-] {1}{2}\n'.format(R, msg, S))
 
 
-def positive(msg):
+def positive(msg: str) -> None:
     sys.stdout.write('{0}[+] {1}{2}\n'.format(G, msg, S))
 
 
-def split_args(option, opt, value, parser):
-    setattr(parser.values, option.dest, value.split(','))
+def create_arg_parser() -> ArgumentParser:
+    parser = ArgumentParser()
+    parser.add_argument('-s', '--server', required=True, metavar='IP|FQDN')
+    parser.add_argument('-u', '--user', required=True, metavar='[DOMAIN\\]USER')
+    parser.add_argument('-p', '--password', required=True, metavar='PASSWORD')
+    parser.add_argument('-q', '--quiet', action=BooleanOptionalAction, help='Suppress all unnecessary output')
+    parser.add_argument('--verify-ssl', action=BooleanOptionalAction, help='Verify SSL certificates')
+    parser.add_argument('--smb-user', metavar='USER', help='Username for SMB operations')
+    parser.add_argument('--smb-password', metavar='PASSWORD', help='Password for SMB operations')
 
+    group = parser.add_argument_group('device')
+    # passed to ActiveSync() via 'creds'
+    group.add_argument('--user-agent', default='Apple-iPad15C3/2207.100', help='Set DeviceUserAgent')
+    group.add_argument('--device-id', default=None, help='Set DeviceId')
+    group.add_argument('--device-type', default='iPad', help='Set DeviceType')
+    # passed to Provision.build() via 'device_info'
+    group.add_argument('--device-name', default='iPad Air 11-inch (M3)', help='Set FriendlyName')
+    group.add_argument('--device-imei', default='', help='Set DeviceImei')
+    group.add_argument('--device-mobile-operator', default='', help='Set DeviceMobileOperator')
+    group.add_argument('--device-os', default='iOS 18.6.2 22G100', help='Set DeviceOS')
+    group.add_argument('--device-language', default='de-DE', help='Set DeviceOSLanguage')
+    group.add_argument('--device-phone-number', default='', help='Set DeviceTelephoneNumber')
+    group.add_argument('--device-model', default='iPad15C3', help='Set DeviceModel')
+    # ClientVersion is hardcoded in ASHTTPConnector() from pyActiveSync/objects/MSASHTTP.py
 
-def create_arg_parser():
+    group = parser.add_argument_group('general')
+    group.add_argument('--check', action='store_true', help='Check if account can be accessed with given password')
+    group.add_argument('--provision-device', action='store_true', help='Register fake device')
 
-    usage = "python -m peas [options] <server>"
-    parser = OptionParser(usage=usage)
+    group = parser.add_argument_group('email')
+    group.add_argument('--list-folders', action='store_true', help='List email folders')
+    group.add_argument('--folder', metavar='NAME|ID', help='Folder to retrieve emails from')
+    group.add_argument('--emails', dest='extract_emails', action='store_true', help='Retrieve emails')
 
-    # Settings:
-    parser.add_option("-u", None, dest="user",
-                      help="username", metavar="USER")
-
-    parser.add_option("-p", None, dest="password",
-                      help="password", metavar="PASSWORD")
-
-    parser.add_option("-q", None, dest="quiet",
-                      action="store_true", default=False,
-                      help="suppress all unnecessary output")
-
-    parser.add_option("--smb-user", None,
-                      dest="smb_user",
-                      help="username to use for SMB operations",
-                      metavar="USER")
-
-    parser.add_option("--smb-pass", None,
-                      dest="smb_password",
-                      help="password to use for SMB operations",
-                      metavar="PASSWORD")
-
-    parser.add_option("--verify-ssl", None, dest="verify_ssl",
-                      action="store_true", default=False,
-                      help="verify SSL certificates (important)")
-
-    parser.add_option(
-        "--device-id",
-        None,
-        dest="device_id",
-        help="override ActiveSync DeviceId (default: random 32 hex chars)",
-        metavar="DEVICEID",
-    )
-
-    parser.add_option(
-        "--device-type",
-        None,
-        dest="device_type",
-        help="override ActiveSync DeviceType (default: iPhone)",
-        metavar="DEVICETYPE",
-    )
-
-    parser.add_option(
-        "--user-agent",
-        None,
-        dest="user_agent",
-        help="override ActiveSync User-Agent header (default: Outlook-iOS-Android/1.0)",
-        metavar="UA",
-    )
-
-    parser.add_option(
-        "--device-os",
-        None,
-        dest="device_os",
-        help="override ActiveSync device OS string (default: OutlookBasicAuth)",
-        metavar="OS",
-    )
-
-    parser.add_option(
-        "--device-imei",
-        None,
-        dest="device_imei",
-        help="override ActiveSync device IMEI value (default: 2095f3b9f442a32220d4d54e641bd4aa)",
-        metavar="IMEI",
-    )
-
-    parser.add_option("-o", None, dest="file",
-                      help="output to file", metavar="FILENAME")
-
-    parser.add_option("-O", None, dest="output_dir",
-                      help="output directory (for specific commands only, not combined with -o)", metavar="PATH")
-
-    parser.add_option("-F", None, dest="format",
-                      help="output formatting and encoding options",
-                      metavar="repr,hex,b64,stdout,stderr,file")
-
-    parser.add_option("--pattern", None, type="string", dest="pattern",
-                      action="callback", callback=split_args,
-                      help="filter files by comma-separated patterns (--crawl-unc)")
-
-    parser.add_option("--download", None, dest="download",
-                      action="store_true", default=False,
-                      help="download files at a given UNC path while crawling (--crawl-unc)")
-
-    parser.add_option("--prefix", None, dest="prefix",
-                      help="NetBIOS hostname prefix (--brute-unc)")
-
-    # Functionality:
-    parser.add_option("--check", None,
-                      action="store_true", dest="check",
-                      help="check if account can be accessed with given password")
-
-    parser.add_option("--emails", None,
-                      action="store_true", dest="extract_emails",
-                      help="retrieve emails")
-
-    parser.add_option("--list-unc", None,
-                      dest="list_unc",
-                      help="list the files at a given UNC path",
-                      metavar="UNC_PATH")
-
-    parser.add_option("--dl-unc", None,
-                      dest="dl_unc",
-                      help="download the file at a given UNC path",
-                      metavar="UNC_PATH")
-
-    parser.add_option("--crawl-unc", None,
-                      dest="crawl_unc",
-                      help="recursively list all files at a given UNC path",
-                      metavar="UNC_PATH")
-
-    parser.add_option("--brute-unc", None,
-                      action="store_true", dest="brute_unc",
-                      help="recursively list all files at a given UNC path")
-
-    parser.add_option("--folder", None,
-                      dest="folder",
-                      help="folder name or ID to target when retrieving emails",
-                      metavar="FOLDER")
-
-    parser.add_option("--list-folders", None,
-                      action="store_true", dest="list_folders",
-                      help="list folders available via ActiveSync")
+    group = parser.add_argument_group('smb')
+    group.add_argument('--list-unc', metavar='UNC_PATH', help='List the files at a given UNC path')
+    group.add_argument('--dl-unc', metavar='UNC_PATH', help='Download the file at a given UNC path')
+    group.add_argument('--crawl-unc', metavar='UNC_PATH', help='Recursively list all files at a given UNC path')
+    group.add_argument('--brute-unc', action='store_true', help='Recursively list all files at a given UNC path')
+    group.add_argument('-o', '--output-file', dest='file', metavar='FILEPATH', help='Output file')
+    group.add_argument('-O', '--output-dir', dest='output_dir', metavar='DIRPATH', help='Output directory for specific commands, not combined with -o')
+    group.add_argument('-F', '--format', metavar='repr,hex,b64,stdout,stderr,file', help='Output formatting and encoding')
+    group.add_argument('--download', action='store_true', default=False, help='Download files at a given UNC path while crawling (--crawl-unc)')
+    group.add_argument('--prefix', help='NetBIOS hostname prefix (--brute-unc)')
+    group.add_argument('--pattern', action='append', default=[], help='Filter files by name (--crawl-unc)')
 
     return parser
 
 
-def init_authed_client(options, verify=True):
-
-    if options.user is None:
-        error("A username must be specified for this command.")
-        return False
-    if options.password is None:
-        error("A password must be specified for this command.")
-        return False
-
+def init_authed_client(options: Namespace) -> peas.Peas:
     client = peas.Peas()
-
-    creds = {
-        'server': options.server,
-        'user': options.user,
-        'password': options.password,
-    }
-    if options.smb_user is not None:
-        creds['smb_user'] = options.smb_user
-    if options.smb_password is not None:
-        creds['smb_password'] = options.smb_password
-    if options.folder is not None:
-        creds['folder'] = options.folder
-    if options.device_id is not None:
-        creds['device_id'] = options.device_id
-    if options.device_type is not None:
-        creds['device_type'] = options.device_type
-    if options.user_agent is not None:
-        creds['user_agent'] = options.user_agent
-    if options.device_os is not None:
-        creds['device_os'] = options.device_os
-    if options.device_imei is not None:
-        creds['device_imei'] = options.device_imei
-
-    client.set_creds(creds)
-
-    if not verify:
+    client.set_creds(options.__dict__)
+    if not options.verify_ssl:
         client.disable_certificate_verification()
-
     return client
 
 
-def check_server(options):
-
-    client = peas.Peas()
-
-    client.set_creds({'server': options.server})
-
-    if not options.verify_ssl:
-        client.disable_certificate_verification()
-
-    result = client.get_server_headers()
-    output_result(str(result), options, default='stdout')
-
-
-def check(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
-    if not client:
-        return
-
+def check(options: Namespace) -> None:
+    client = init_authed_client(options)
     creds_valid = client.check_auth()
     if creds_valid:
-        positive("Auth success.")
+        positive('Auth success.')
     else:
-        error("Auth failure.")
+        error('Auth failure.')
 
 
 def extract_emails(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
+    client = init_authed_client(options)
     if not client:
         return
 
@@ -273,39 +138,33 @@ def extract_emails(options):
         info("Wrote %d emails to %r" % (len(emails), options.output_dir))
 
 
-def list_folders(options):
+def provision_device(options: Namespace) -> None:
+    client = init_authed_client(options)
+    client.provision_device()
 
-    client = init_authed_client(options, verify=options.verify_ssl)
-    if not client:
-        return
 
+def list_folders(options: Namespace) -> None:
+    client = init_authed_client(options)
     folders = client.list_folders()
     if not folders:
-        info("No folders returned by server.")
+        info('No folders returned by server.')
         return
-
     lines = []
     for folder in folders:
-        name = folder.get("DisplayName", "-")
-        server_id = folder.get("ServerId", "-")
-        parent_id = folder.get("ParentId", "-")
-        ftype = folder.get("Type", "-")
-        lines.append(f"{name} (ID: {server_id}, Type: {ftype}, Parent: {parent_id})")
-
+        name = folder.get('DisplayName', '-')
+        server_id = folder.get('ServerId', '-')
+        parent_id = folder.get('ParentId', '-')
+        ftype = folder.get('Type', '-')
+        lines.append(f'{name} (ID: {server_id}, Type: {ftype}, Parent: {parent_id})')
     output_result('\n'.join(lines), options, default='stdout')
 
 
-def list_unc_helper(client, uncpath, options, show_parent=True):
-
+def list_unc_helper(client: peas.Peas, uncpath: str, options: Namespace, show_parent=True) -> None:
     records = client.get_unc_listing(uncpath)
-
     output = []
-
     if not options.quiet and show_parent:
         info("Listing: %s\n" % (uncpath,))
-
     for record in records:
-
         name = record.get('DisplayName')
         uncpath = record.get('LinkId')
         is_folder = record.get('IsFolder') == '1'
@@ -314,26 +173,18 @@ def list_unc_helper(client, uncpath, options, show_parent=True):
         ctype = record.get('ContentType', '-')
         last_mod = record.get('LastModifiedDate', '-')
         created = record.get('CreationDate', '-')
-
         attrs = ('f' if is_folder else '-') + ('h' if is_hidden else '-')
-
         output.append("%s %-24s %-24s %-24s %-12s %s" % (attrs, created, last_mod, ctype, size, uncpath))
-
     output_result('\n'.join(output), options, default='stdout')
 
 
-def list_unc(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
-    if not client:
-        return
-
+def list_unc(options: Namespace) -> None:
+    client = init_authed_client(options)
     list_unc_helper(client, options.list_unc, options)
 
 
 def dl_unc(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
+    client = init_authed_client(options)
     if not client:
         return
 
@@ -347,7 +198,6 @@ def dl_unc(options):
 
 
 def crawl_unc_helper(client, uncpath, patterns, options):
-
     records = client.get_unc_listing(uncpath)
     for record in records:
         if record['IsFolder'] == '1':
@@ -395,28 +245,15 @@ def crawl_unc_helper(client, uncpath, patterns, options):
 
 
 def crawl_unc(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
-    if not client:
-        return
-
-    if options.pattern:
-        patterns = options.pattern
-    else:
-        patterns = ['']
-
+    client = init_authed_client(options)
     if options.download:
         info('Listing and downloading all files: %s' % (options.crawl_unc,))
     else:
         info('Listing all files: %s' % (options.crawl_unc,))
-
-    info('Pattern: %s\n' % (options.pattern,))
-
-    crawl_unc_helper(client, options.crawl_unc, patterns, options)
+    crawl_unc_helper(client, options.crawl_unc, options.patterns or [''], options)
 
 
 def generate_wordlist(prefix=None):
-
     with open('hostnames.txt', 'r') as fd:
         hostnames = [line.strip() for line in fd]
 
@@ -448,8 +285,7 @@ def generate_wordlist(prefix=None):
 
 
 def brute_unc(options):
-
-    client = init_authed_client(options, verify=options.verify_ssl)
+    client = init_authed_client(options)
     if not client:
         return
 
@@ -463,7 +299,6 @@ def brute_unc(options):
 
 
 def output_result(data, options, default='repr'):
-
     fmt = options.format
     if not fmt:
         fmt = 'file' if options.file else default
@@ -522,20 +357,7 @@ def output_result(data, options, default='repr'):
             print(payload)
 
 
-def process_options(options):
-
-    # Create the output directory if necessary.
-    if options.output_dir:
-        try:
-            os.makedirs(options.output_dir)
-        except OSError:
-            pass
-
-    return options
-
-
 def mkdir_p(dirpath):
-
     try:
         dirname = str(dirpath)
         os.makedirs(dirname)
@@ -551,48 +373,33 @@ def mkdir_p(dirpath):
     return dirpath
 
 
-def main():
-
-    # Parse the arguments to the program into an options object.
-    arg_parser = create_arg_parser()
-    (options, args) = arg_parser.parse_args()
-
-    if not options.quiet:
-        peas.show_banner()
-
-    options = process_options(options)
-
-    # The server is required as an argument.
-    if not args:
-        arg_parser.print_help()
-        return
-    options.server = args[0]
-
-    # Perform the requested functionality.
-    ran = False
-    if options.check:
-        check(options)
-        ran = True
-    if options.list_folders:
-        list_folders(options)
-        ran = True
-    if options.extract_emails:
-        extract_emails(options)
-        ran = True
-    if options.list_unc:
-        list_unc(options)
-        ran = True
-    if options.dl_unc:
-        dl_unc(options)
-        ran = True
-    if options.crawl_unc:
-        crawl_unc(options)
-        ran = True
-    if options.brute_unc:
-        brute_unc(options)
-        ran = True
-    if not ran:
-        check_server(options)
+def main() -> None:
+    parser = create_arg_parser()
+    opts = parser.parse_args()
+    if not opts.smb_user and not opts.smb_password:
+        opts.smb_user = opts.user
+        opts.smb_password = opts.password
+    if not opts.device_id:
+        opts.device_id = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(26))
+        print(f'Warning: Using random device id {opts.device_id}. By default a user can register at most 20 devices.')
+    if opts.output_dir:
+        Path(opts.output_dir).mkdir(exist_ok=True)
+    if opts.check:
+        check(opts)
+    if opts.list_folders:
+        list_folders(opts)
+    if opts.extract_emails:
+        extract_emails(opts)
+    if opts.list_unc:
+        list_unc(opts)
+    if opts.dl_unc:
+        dl_unc(opts)
+    if opts.crawl_unc:
+        crawl_unc(opts)
+    if opts.brute_unc:
+        brute_unc(opts)
+    if opts.provision_device:
+        provision_device(opts)
 
 
 if __name__ == '__main__':

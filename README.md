@@ -1,209 +1,68 @@
 # PEAS
 
-PEAS is a Python 3 library and command line application for running commands on an ActiveSync server e.g. Microsoft Exchange. It is based on [research](https://labs.mwrinfosecurity.com/blog/accessing-internal-fileshares-through-exchange-activesync) into Exchange ActiveSync protocol by Adam Rutherford and David Chismon of MWR. The original project targeted Python 2; this fork is fully ported to Python 3. 
+PEAS is a command line tool to access Microsoft Exchange over ActiveSync.
+It is based on [research](https://labs.mwrinfosecurity.com/blog/accessing-internal-fileshares-through-exchange-activesync) by Adam Rutherford and David Chismon of MWR.
+The original project targeted Python 2; this fork is fully ported to Python 3.
 
-## Prerequisites
+## Setup
 
-* Python 3.8 or later
-* Python [Requests](https://docs.python-requests.org/) library (installed automatically via `requirements.txt`)
+Install with [uv](https://github.com/astral-sh/uv).
 
-## Significant source files
+~~~ bash
+uv tool install git+https://github.com/glynx/peas@master
+~~~
 
-Path | Functionality
---- | ---
-`peas/__main__.py` | The command line application.
-`peas/peas.py` | The PEAS client class that exclusively defines the interface to PEAS.
-`peas/py_activesync_helper.py` | The helper functions that control the interface to pyActiveSync.
-`peas/pyActiveSync/client` | The pyActiveSync EAS command builders and parsers.
+## Usage
 
-## Quick start
+Check credentials.
 
-```
-$ git clone https://github.com/snovvcrash/peas ~/tools/peas-m && cd ~/tools/peas-m
-$ python3 -m venv venv && source ./venv/bin/activate
-(venv) $ pip install -r requirements.txt
-```
+~~~ bash
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --check
+~~~
 
-## Optional installation
+Register a device and note the device id show in the output.
 
-```
-$ python setup.py install
-```
+~~~ bash
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --provision-device --user-agent Apple-iPhone15C4/2301.355 --device-type iPhone --device-name 'iPhone 15' --device-os 'iOS 26.0.1 23A355' --device-model iPhone15C4
+~~~
 
-# PEAS application
+> [!note]
+> All device options should be repeated for each following command.
+>
+> ~~~ bash
+> peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --provision-device --user-agent Apple-iPad15C3/2207.100 --device-type iPad --device-name 'iPad Air 11-inch (M3)' --device-os 'iOS 18.6.2 22G100' --device-model iPad15C3
+> peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --list-unc '\\localhost' --device-id $id --user-agent Apple-iPad15C3/2207.100 --device-type iPad --device-name 'iPad Air 11-inch (M3)' --device-os 'iOS 18.6.2 22G100' --device-model iPad15C3
+> ~~~
 
-PEAS can be run without installation from the parent `peas` directory (containing this readme). PEAS can also be run with the command `peas` after installation.
+Dump emails.
 
-## Running PEAS
+~~~ bash
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --list-folders
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --emails --folder Posteingang
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --emails --folder Posteingang -O ./emails
+~~~
 
-```
-$ python -m peas [options] <server>
-```
+Access SMB shares.
 
-## Example usage
+~~~ bash
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --list-unc '\\localhost'
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --list-unc '\\dc01\sysvol\megacorp.local'
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --brute-unc --prefix mega
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --dl-unc '\\dc02\guestshare\file.txt'
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --dl-unc '\\dc02\guestshare\file.txt' -o ./file.txt
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --crawl-unc '\\dc02\sysvol\megacorp.local'
+peas -u 'megacorp\snovvcrash' -p 'Passw0rd1!' mx.megacorp.com --crawl-unc '\\dc02\sysvol\megacorp.local' --download
+~~~
 
-### Check server
+> [!note]
+> Using an IP address or FQDN instead of a hostname in the UNC path may fail.
 
-```
-$ python -m peas mx.megacorp.local
-```
+## ActiveSync Cache
 
-### Check credentials
+When PEAS connects to Exchange, it caches FolderSync results, SyncKeys and policy data in `./pyas_cache/<server>/<user>.asdb`.
+The chosen cache file is printed whenever `--emails` or `--list-folders` is executed.
+Delete the subdirectory to reset the cache for a specific account.
 
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --check
-```
+## Development
 
-### Get emails
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails
-```
-
-### Save emails to directory
-
-```
-$ python -m peas -O emails -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails
-```
-
-### List file shares
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --list-unc='\\DC02'
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --list-unc='\\DC02\SYSVOL\megacorp.local'
-```
-
-**Note:** Using an IP address or FQDN instead of a hostname in the UNC path may fail.
-
-### View file on file share
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --dl-unc='\\DC02\guestshare\file.txt'
-```
-
-### Save file from file share
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' -o file.txt mx.megacorp.local --dl-unc='\\DC02\guestshare\file.txt'
-```
-
-### Crawl & download
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --crawl-unc='\\DC02\SYSVOL\megacorp.local' [--pattern xml,ini] [--download]
-```
-
-### Brute file shares
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --brute-unc [--prefix xyz]
-```
-
-### Command line arguments
-
-Run `python -m peas --help` for the latest options.
-
-```
-Options:
-  -h, --help            show this help message and exit
-  -u USER               username
-  -p PASSWORD           password
-  -q                    suppress all unnecessary output
-  --smb-user=USER       username to use for SMB operations
-  --smb-pass=PASSWORD   password to use for SMB operations
-  --verify-ssl          verify SSL certificates (important)
-  --device-id=DEVICEID  override the DeviceId sent to ActiveSync (default: random 32 hex chars)
-  --device-type=DEVICETYPE
-                        override the DeviceType sent to ActiveSync (default: iPhone)
-  --user-agent=UA       override the User-Agent header (default: Outlook-iOS-Android/1.0)
-  -o FILENAME           output to file
-  -O PATH               output directory (for specific commands only, not
-                        combined with -o)
-  -F repr,hex,b64,stdout,stderr,file
-                        output formatting and encoding options
-  --pattern=PATTERN     filter files by comma-separated patterns (--crawl-unc)
-  --download            download files at a given UNC path while crawling
-                        (--crawl-unc)
-  --prefix=PREFIX       NetBIOS hostname prefix (--brute-unc)
-  --check               check if account can be accessed with given password
-  --emails              retrieve emails
-  --folder=FOLDER       folder name or ID to target when retrieving emails
-  --list-folders        list folders available via ActiveSync
-  --list-unc=UNC_PATH   list the files at a given UNC path
-  --dl-unc=UNC_PATH     download the file at a given UNC path
-  --crawl-unc=UNC_PATH  recursively list all files at a given UNC path
-  --brute-unc           recursively list all files at a given UNC path
-```
-
-## ActiveSync cache
-
-When PEAS connects to Exchange, it caches FolderSync results, SyncKeys and policy data in `./pyas_cache/<server>/<user>.asdb`. The chosen cache file is printed whenever `--emails` or `--list-folders` is executed. Delete the subdirectory to reset the cache for a specific account.
-
-All HTTP requests are logged to stdout (method, URL, user, device id/type), so you can audit what the client sends without extra tooling. If Exchange responds with a device access state such as *Quarantined* or *Blocked*, PEAS will emit a warning.
-
-## PEAS library
-
-PEAS can be imported as a library.
-
-### Example code
-
-```python
-import peas
-
-# Create an instance of the PEAS client.
-client = peas.Peas()
-
-# Display the documentation for the PEAS client.
-help(client)
-
-# Disable certificate verification so self-signed certificates don't cause errors.
-client.disable_certificate_verification()
-
-# Set the credentials and server to connect to.
-client.set_creds({
-	'server': r'mx.megacorp.local',
-	'user': r'MEGACORP\snovvcrash',
-	'password': r'Passw0rd1!',
-})
-
-# Check the credentials are accepted.
-print("Auth result:", client.check_auth())
-
-# Retrieve a file share directory listing.
-listing = client.get_unc_listing(r'\\DC02\SYSVOL\megacorp.local')
-print(listing)
-
-# Retrieve emails.
-emails = client.extract_emails()
-print(emails)
-```
-
-## Extending
-
-To extend the functionality of PEAS, there is a four step process:
-
-1. Create a builder and parser for the EAS command if it has not been implemented in `pyActiveSync/client`. Copying an existing source file for another command and then editing it has proved effective. The [Microsoft EAS documentation](https://msdn.microsoft.com/en-us/library/ee202197%28v=exchg.80%29.aspx) describes the structure of the XML that must be created and parsed from the response.
-
-2. Create a helper function in `py_activesync_helper.py` that connects to the EAS server over HTTPS, builds and runs the command to achieve the desired functionality. Again, copying an existing function such as `get_unc_listing` can be effective.
-
-3. Create a method in the `Peas` class that calls the helper function to achieve the desired functionality. This is where PEAS would decide which backend helper function to call if py-eas-client was also an option.
-
-4. Add command line support for the feature to the PEAS application by editing `peas/__main__.py`. A new option should be added that when set, calls the method created in the previous step.
-
- 
-## Limitations 
- 
-PEAS has been tested on Kali 2.0 against Microsoft Exchange Server 2013 and 2016. The domain controller was Windows 2012 and the Exchange server was running on the same machine. Results with other configurations may vary.
-
-py-eas-client support is limited to retrieving emails and causes a dependency on Twisted. It was included when the library was being evaluated but it makes sense to remove it from PEAS now, as all functionality can be provided by pyActiveSync.
-
-The licence may be restrictive due to the inclusion of pyActiveSync, which uses the GPLv2.
-
-The requirement to know the hostname of the target machine for file share access may impede enumeration.
-### List folders and fetch a specific folder
-
-```
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --list-folders
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails --folder "Posteingang"
-$ python -m peas -u 'MEGACORP\snovvcrash' -p 'Passw0rd1!' mx.megacorp.local --emails --device-id 1234567890ABCDEF1234567890ABCDEF --device-type Outlook --user-agent Outlook-iOS-Android/1.0
-```
+Don't look at the source code.
