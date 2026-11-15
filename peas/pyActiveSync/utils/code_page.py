@@ -16,8 +16,6 @@
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
 #  MA  02110-1301, USA.
 ########################################################################
-
-
 class code_page(object):
     """A code page is a map of tokens to tags"""
     def __init__(self, namespace=None, xmlns=None, index=None):
@@ -26,28 +24,40 @@ class code_page(object):
         self.index = index
         self.tokens = {}
         self.tags = {}
-
     def add(self, token, tag):
         self.tags.update({ token : tag })
         self.tokens.update({ tag : token })
-
     def get(self, t, token_or_tag):
         if t == 0:
             return get_token(token_or_tag)
         elif t == 1:
             return get_tag(token_or_tag)
-
     def get_token(self, tag):
         return self.tokens[tag]
-
     def get_tag(self, token):
-        #print token, self.xmlns
-        return self.tags[token]
-
+        try:
+            return self.tags[token]
+        except KeyError:
+            # Unknown token / tag not defined in this table - e.g. a newer
+            # EAS 16.0/16.1 field (Email2:IsDraft, Email2:Bcc, etc.) that is
+            # missing from this (older) code page table.
+            # Instead of crashing: return a placeholder tag and let the sync
+            # continue, so the fields we actually care about (To/From/Subject/
+            # Body in the Email page) still get parsed correctly.
+            placeholder = "Unknown_0x%02X" % token
+            print(
+                "[WARN] code_page %r (xmlns=%r, index=%s): unknown tag "
+                "token=0x%02X, using placeholder %r"
+                % (self.namespace, self.xmlns, self.index, token, placeholder)
+            )
+            # Cache it for later debugging/patching, so subsequent lookups of
+            # the same token return the placeholder without printing the
+            # warning again.
+            self.tags[token] = placeholder
+            return placeholder
     def __repr__(self):
         import pprint
         return "\r\n Namespace:%s - Xmlns:%s\r\n%s\r\n" % (self.namespace, self.xmlns, pprint.pformat(self.tokens))
-
     def __iter__(self):
         lnamespace = self.namespace
         lxmlns = self.xmlns
